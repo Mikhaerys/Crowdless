@@ -1,5 +1,12 @@
 __pycache__/
 *.py[cod]
 backend/.env
+backend/secrets/
+*firebase-adminsdk*.json
 
 .venv/
+
+
+node_modules/
+dist/
+.env
