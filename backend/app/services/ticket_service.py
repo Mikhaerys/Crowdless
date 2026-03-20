@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi import HTTPException, status
 from google.cloud import firestore
@@ -170,4 +171,51 @@ class TicketService:
             visitor_name=ticket["visitor_name"],
             validated=True,
             validated_at=ticket["validated_at"],
+        )
+
+    def renew_ticket_qr(self, ticket_id: str) -> TicketResponse:
+        ticket_reference = self.firestore.tickets.document(ticket_id)
+        ticket_snapshot = ticket_reference.get()
+
+        if not ticket_snapshot.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+        ticket = ticket_snapshot.to_dict()
+
+        if ticket.get("validated"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot renew a ticket that has already been used at the entrance")
+
+        original_payload = json.loads(ticket["qr_payload"])
+        new_payload = json.dumps(
+            {
+                "ticket_id": original_payload["ticket_id"],
+                "booking_id": original_payload["booking_id"],
+                "visitor_id": original_payload["visitor_id"],
+                "visit_date": original_payload["visit_date"],
+                "renewed_at": int(time.time()),
+            },
+            separators=(",", ":"),
+        )
+        new_qr_code = generate_qr_code_base64(new_payload)
+        now = self.firestore.now()
+
+        ticket_reference.update({
+            "qr_code": new_qr_code,
+            "qr_payload": new_payload,
+            "renewed_at": now,
+            "updated_at": now,
+        })
+
+        return TicketResponse(
+            ticket_id=ticket_id,
+            booking_id=ticket["booking_id"],
+            visitor_id=ticket["visitor_id"],
+            visitor_name=ticket["visitor_name"],
+            qr_code=new_qr_code,
+            qr_payload=new_payload,
+            validated=bool(ticket["validated"]),
+            validated_at=ticket.get("validated_at"),
         )

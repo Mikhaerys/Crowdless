@@ -51,5 +51,21 @@ class Settings:
     def child_ticket_price(self) -> float:
         return float(os.getenv("CHILD_TICKET_PRICE", "10"))
 
+    @property
+    def bold_api_key(self) -> str | None:
+        return os.getenv("BOLD_API_KEY") or None
+
+    @property
+    def bold_secret_key(self) -> str | None:
+        return os.getenv("BOLD_SECRET_KEY") or None
+
+    @property
+    def bold_api_url(self) -> str:
+        return os.getenv("BOLD_API_URL", "https://payments.api.bold.co/v2").rstrip("/")
+
+    @property
+    def frontend_app_url(self) -> str:
+        return os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+
 
 settings = Settings()

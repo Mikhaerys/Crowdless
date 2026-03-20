@@ -53,8 +53,27 @@ class VisitorRegistrationRequest(BaseModel):
 
 
 class PaymentVerificationRequest(BaseModel):
-    status: Literal["approved", "failed", "cancelled"] = "approved"
+    status: Literal["approved", "failed", "cancelled",
+                    "processing", "pending"] = "approved"
     provider: str = Field(default="test")
+    transaction_id: str | None = None
+
+
+class BoldPaymentPreparationResponse(BaseModel):
+    booking_id: str
+    order_id: str
+    api_key: str
+    amount: int
+    currency: str
+    integrity_signature: str
+    description: str
+    redirection_url: str
+
+
+class BoldPaymentVerificationRequest(BaseModel):
+    booking_id: str = Field(min_length=3)
+    bold_order_id: str = Field(min_length=3)
+    bold_tx_status: str = Field(min_length=3)
     transaction_id: str | None = None
 
 

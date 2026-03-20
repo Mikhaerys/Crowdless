@@ -154,6 +154,16 @@ h1 {
     background: var(--brand-press);
 }
 
+.button-secondary {
+    border: 1px solid var(--line);
+    background: #ffffff;
+    color: var(--ink-strong);
+}
+
+.button-secondary:hover {
+    background: #f3f8f5;
+}
+
 .api-hint {
     color: var(--ink-soft);
     font-size: 0.9rem;
@@ -262,6 +272,15 @@ h1 {
     margin: 0;
 }
 
+.success-box {
+    border: 1px solid #9fd8c1;
+    background: #e8fbf3;
+    color: var(--ok);
+    border-radius: 12px;
+    padding: 0.65rem 0.8rem;
+    margin: 0;
+}
+
 .empty-state {
     margin: 0;
     color: var(--ink-soft);
@@ -350,6 +369,82 @@ h1 {
     to {
         transform: rotate(360deg);
     }
+}
+
+.qr-section {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.qr-section h2 {
+    margin: 0;
+}
+
+.qr-hint {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.qr-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    justify-content: flex-start;
+}
+
+.qr-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: #f9fefb;
+    width: 210px;
+}
+
+.qr-visitor-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-align: center;
+    margin: 0;
+    color: var(--ink-strong);
+}
+
+.qr-image {
+    width: 170px;
+    height: 170px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid #dce8e2;
+}
+
+.qr-ticket-id {
+    color: var(--ink-soft);
+    font-size: 0.68rem;
+    word-break: break-all;
+    text-align: center;
+}
+
+.qr-renew-btn {
+    font-size: 0.8rem;
+    padding: 0.45rem 0.8rem;
+    border-radius: 8px;
+    margin-top: 0.25rem;
+}
+
+.admin-notice {
+    border: 1px dashed #c0a882;
+    border-radius: 12px;
+    padding: 0.65rem 0.9rem;
+    background: #fffbf4;
+    color: #7a5c2e;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
 }
 
 @media (min-width: 900px) {
