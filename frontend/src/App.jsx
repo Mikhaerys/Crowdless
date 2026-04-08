@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-
 import AppShell from "./components/AppShell";
 import AdminPage from "./pages/Admin";
 import BookingPage from "./pages/Booking";
@@ -9,19 +8,19 @@ import PaymentPage from "./pages/Payment";
 import VisitorInfoPage from "./pages/VisitorInfo";
 
 function App() {
-    return (
-        <AppShell>
-            <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/reserva" element={<BookingPage />} />
-                <Route path="/pago" element={<PaymentPage />} />
-                <Route path="/visitantes" element={<VisitorInfoPage />} />
-                <Route path="/confirmacion" element={<ConfirmationPage />} />
-                <Route path="/admin" element={<AdminPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-        </AppShell>
-    );
+  return (
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/reserva" element={<BookingPage />} />
+        <Route path="/pago" element={<PaymentPage />} />
+        <Route path="/visitantes" element={<VisitorInfoPage />} />
+        <Route path="/confirmacion" element={<ConfirmationPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppShell>
+  );
 }
 
 export default App;

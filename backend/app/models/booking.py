@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class VisitorCreate(BaseModel):
@@ -49,31 +49,14 @@ class BookingDetailsResponse(BookingResponse):
 
 
 class VisitorRegistrationRequest(BaseModel):
+    # Email del comprador — se usa para enviar todos los QRs
+    contact_email: EmailStr
     visitors: list[VisitorCreate]
 
 
 class PaymentVerificationRequest(BaseModel):
-    status: Literal["approved", "failed", "cancelled",
-                    "processing", "pending"] = "approved"
+    status: Literal["approved", "failed", "cancelled"] = "approved"
     provider: str = Field(default="test")
-    transaction_id: str | None = None
-
-
-class BoldPaymentPreparationResponse(BaseModel):
-    booking_id: str
-    order_id: str
-    api_key: str
-    amount: int
-    currency: str
-    integrity_signature: str
-    description: str
-    redirection_url: str
-
-
-class BoldPaymentVerificationRequest(BaseModel):
-    booking_id: str = Field(min_length=3)
-    bold_order_id: str = Field(min_length=3)
-    bold_tx_status: str = Field(min_length=3)
     transaction_id: str | None = None
 
 
@@ -86,3 +69,4 @@ class PaymentResponse(BaseModel):
     currency: str
     status: str
     created_at: datetime
+    
