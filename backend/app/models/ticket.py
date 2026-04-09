@@ -21,3 +21,7 @@ class TicketValidationResponse(BaseModel):
     visitor_name: str
     validated: bool
     validated_at: datetime
+
+
+class QRValidationRequest(BaseModel):
+    qr_payload: str

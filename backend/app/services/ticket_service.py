@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
-import time
+import secrets
 
 from fastapi import HTTPException, status
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from app.core.config import settings
 from app.models.booking import VisitorRegistrationRequest
 from app.models.ticket import TicketResponse, TicketValidationResponse
 from app.services.firestore_service import FirestoreService
@@ -16,6 +19,66 @@ from app.utils.qr_generator import generate_qr_code_base64
 class TicketService:
     def __init__(self, firestore_service: FirestoreService) -> None:
         self.firestore = firestore_service
+
+    def _sign_qr_payload(self, ticket_id: str, nonce: str) -> str:
+        message = f"{ticket_id}:{nonce}".encode("utf-8")
+        secret = settings.qr_signing_secret.encode("utf-8")
+        return hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+    def _build_qr_payload(self, ticket_id: str) -> str:
+        nonce = secrets.token_urlsafe(12)
+        signature = self._sign_qr_payload(ticket_id, nonce)
+        return json.dumps(
+            {
+                "ticket_id": ticket_id,
+                "nonce": nonce,
+                "sig": signature,
+            },
+            separators=(",", ":"),
+        )
+
+    def _parse_qr_ticket_id(self, qr_payload: str) -> str:
+        try:
+            payload = json.loads(qr_payload)
+        except json.JSONDecodeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid QR payload format",
+            ) from error
+
+        if not isinstance(payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid QR payload format",
+            )
+
+        ticket_id = payload.get("ticket_id")
+        if not isinstance(ticket_id, str) or not ticket_id.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="QR payload is missing ticket_id",
+            )
+
+        # Backward compatibility for previously issued tickets.
+        if "sig" not in payload and "nonce" not in payload:
+            return ticket_id
+
+        nonce = payload.get("nonce")
+        signature = payload.get("sig")
+        if not isinstance(nonce, str) or not isinstance(signature, str):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="QR payload signature is incomplete",
+            )
+
+        expected_signature = self._sign_qr_payload(ticket_id, nonce)
+        if not hmac.compare_digest(signature, expected_signature):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="QR payload signature is invalid",
+            )
+
+        return ticket_id
 
     def register_visitors(self, booking_id: str, payload: VisitorRegistrationRequest) -> list[TicketResponse]:
         booking_reference = self.firestore.bookings.document(booking_id)
@@ -63,15 +126,7 @@ class TicketService:
                 "id_number": visitor.id_number,
                 "created_at": now,
             }
-            qr_payload = json.dumps(
-                {
-                    "ticket_id": ticket_reference.id,
-                    "booking_id": booking_id,
-                    "visitor_id": visitor_reference.id,
-                    "visit_date": booking["visit_date"],
-                },
-                separators=(",", ":"),
-            )
+            qr_payload = self._build_qr_payload(ticket_reference.id)
             ticket_data = {
                 "booking_id": booking_id,
                 "visitor_id": visitor_reference.id,
@@ -173,6 +228,10 @@ class TicketService:
             validated_at=ticket["validated_at"],
         )
 
+    def validate_ticket_by_qr(self, qr_payload: str) -> TicketValidationResponse:
+        ticket_id = self._parse_qr_ticket_id(qr_payload)
+        return self.validate_ticket(ticket_id)
+
     def renew_ticket_qr(self, ticket_id: str) -> TicketResponse:
         ticket_reference = self.firestore.tickets.document(ticket_id)
         ticket_snapshot = ticket_reference.get()
@@ -188,17 +247,7 @@ class TicketService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot renew a ticket that has already been used at the entrance")
 
-        original_payload = json.loads(ticket["qr_payload"])
-        new_payload = json.dumps(
-            {
-                "ticket_id": original_payload["ticket_id"],
-                "booking_id": original_payload["booking_id"],
-                "visitor_id": original_payload["visitor_id"],
-                "visit_date": original_payload["visit_date"],
-                "renewed_at": int(time.time()),
-            },
-            separators=(",", ":"),
-        )
+        new_payload = self._build_qr_payload(ticket_id)
         new_qr_code = generate_qr_code_base64(new_payload)
         now = self.firestore.now()
 

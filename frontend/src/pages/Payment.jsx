@@ -16,6 +16,13 @@ function extractBookingIdFromOrderId(orderId) {
     return match ? match[1] : null;
 }
 
+function formatPrice(amount, locale = 'es-ES') {
+    return new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount);
+}
+
 function PaymentPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -204,7 +211,7 @@ function PaymentPage() {
                     Reserva: <strong>{paymentSummary.bookingId}</strong>
                 </p>
                 <p>
-                    Total: <strong>{paymentSummary.amount} {paymentSummary.currency}</strong>
+                    Total: <strong>{formatPrice(paymentSummary.amount)} {paymentSummary.currency}</strong>
                 </p>
                 <p>
                     Entradas: <strong>{paymentSummary.totalTickets}</strong>

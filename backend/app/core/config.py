@@ -67,5 +67,9 @@ class Settings:
     def frontend_app_url(self) -> str:
         return os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 
+    @property
+    def qr_signing_secret(self) -> str:
+        return os.getenv("QR_SIGNING_SECRET") or self.bold_secret_key or "crowdless-dev-qr-secret"
+
 
 settings = Settings()
