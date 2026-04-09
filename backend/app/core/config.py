@@ -51,21 +51,18 @@ class Settings:
     def child_ticket_price(self) -> float:
         return float(os.getenv("CHILD_TICKET_PRICE", "10"))
 
+    # ── SendGrid ────────────────────────────────────────────
     @property
-    def bold_api_key(self) -> str | None:
-        return os.getenv("BOLD_API_KEY") or None
+    def sendgrid_api_key(self) -> str:
+        return os.getenv("SENDGRID_API_KEY", "")
 
     @property
-    def bold_secret_key(self) -> str | None:
-        return os.getenv("BOLD_SECRET_KEY") or None
+    def sendgrid_from_email(self) -> str:
+        return os.getenv("SENDGRID_FROM_EMAIL", "")
 
     @property
-    def bold_api_url(self) -> str:
-        return os.getenv("BOLD_API_URL", "https://payments.api.bold.co/v2").rstrip("/")
-
-    @property
-    def frontend_app_url(self) -> str:
-        return os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+    def sendgrid_from_name(self) -> str:
+        return os.getenv("SENDGRID_FROM_NAME", "Museo de Historia Natural - Unicauca")
 
     @property
     def qr_signing_secret(self) -> str:

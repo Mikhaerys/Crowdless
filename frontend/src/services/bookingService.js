@@ -22,8 +22,12 @@ export const bookingService = {
 
     getBooking: (bookingId) => apiClient.get(`/bookings/${bookingId}`),
 
-    registerVisitors: (bookingId, visitors) =>
-        apiClient.post(`/bookings/${bookingId}/visitors`, { visitors }),
+    // contactEmail agregado para envío de QRs por email
+    registerVisitors: (bookingId, contactEmail, visitors) =>
+        apiClient.post(`/bookings/${bookingId}/visitors`, {
+            contact_email: contactEmail,
+            visitors,
+        }),
 
-    getTicketsByBooking: (bookingId) => apiClient.get(`/bookings/${bookingId}/tickets`)
+    getTicketsByBooking: (bookingId) => apiClient.get(`/bookings/${bookingId}/tickets`),
 };
