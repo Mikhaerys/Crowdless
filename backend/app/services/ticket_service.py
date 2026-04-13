@@ -237,9 +237,14 @@ class TicketService:
 
             ticket = ticket_snapshot.to_dict()
             if ticket.get("validated"):
+                validated_at = ticket.get("validated_at")
+                validated_at_text = (
+                    validated_at.isoformat() if hasattr(
+                        validated_at, "isoformat") else str(validated_at)
+                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Ticket already validated",
+                    detail=f"Ticket already validated (ticket_id={ticket_id}, validated_at={validated_at_text})",
                 )
 
             booking_reference = self.firestore.bookings.document(

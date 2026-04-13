@@ -29,6 +29,7 @@ bool captureDocumentAndSend();
 bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQuality,
                     bool flashOn);
 void sendQrPayload(const QRCodeData &qrCodeData);
+void sendLog(const char *level, const char *detail);
 void handleCommand(const String &command);
 void sendStatus(const char *status, const char *detail = nullptr);
 void setFlash(bool on);
@@ -118,31 +119,56 @@ bool captureQrAndSend()
 
     const unsigned long maxWaitMs = 10000;
     const unsigned long startMs = millis();
-    QRCodeData qrCodeData;
+    unsigned int invalidDetections = 0;
+
+    // Turn on flash while scanning QR to improve decode success in low light.
+    setFlash(true);
+    delay(80);
 
     while (millis() - startMs < maxWaitMs)
     {
+        // Reinitialize qrCodeData on each loop iteration to avoid stale data.
+        QRCodeData qrCodeData = {};
         if (qrReader.receiveQrCode(&qrCodeData, 250))
         {
-            sendQrPayload(qrCodeData);
-            return qrCodeData.valid;
+            if (qrCodeData.valid)
+            {
+                setFlash(false);
+                sendQrPayload(qrCodeData);
+                return true;
+            }
+
+            invalidDetections++;
+            sendLog("WARN", "QR_INVALID_RETRY");
         }
     }
 
-    sendStatus("ERROR", "QR_TIMEOUT");
+    setFlash(false);
+    if (invalidDetections > 0)
+    {
+        sendStatus("ERROR", "QR_INVALID_TIMEOUT");
+    }
+    else
+    {
+        sendStatus("ERROR", "QR_TIMEOUT");
+    }
+
     return false;
 }
 
 bool captureDocumentAndSend()
 {
-    // Document capture: larger frame and optional flash for better detail.
-    return captureAndSend("DOC", FRAMESIZE_UXGA, 12, true);
+    // Keep document capture in camera's current stable mode set by QR reader.
+    return captureAndSend("DOC", FRAMESIZE_QVGA, 0, true);
 }
 
 bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQuality,
                     bool flashOn)
 {
     stopQrWorker();
+
+    (void)frameSize;
+    (void)jpegQuality;
 
     sensor_t *sensor = esp_camera_sensor_get();
     if (sensor == nullptr)
@@ -151,10 +177,6 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
         startQrWorker();
         return false;
     }
-
-    sensor->set_pixformat(sensor, PIXFORMAT_JPEG);
-    sensor->set_framesize(sensor, frameSize);
-    sensor->set_quality(sensor, jpegQuality);
 
     if (flashOn)
     {
@@ -172,8 +194,6 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
     if (fb == nullptr)
     {
         sendStatus("ERROR", "CAPTURE_FAILED");
-        sensor->set_pixformat(sensor, PIXFORMAT_GRAYSCALE);
-        sensor->set_framesize(sensor, FRAMESIZE_QVGA);
         startQrWorker();
         return false;
     }
@@ -195,9 +215,6 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
 
     CTRL_SERIAL.println("IMG_END");
     esp_camera_fb_return(fb);
-
-    sensor->set_pixformat(sensor, PIXFORMAT_GRAYSCALE);
-    sensor->set_framesize(sensor, FRAMESIZE_QVGA);
     startQrWorker();
 
     sendStatus("OK", typeLabel);
@@ -206,19 +223,23 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
 
 void sendQrPayload(const QRCodeData &qrCodeData)
 {
+    if (!qrCodeData.valid)
+    {
+        sendStatus("ERROR", "QR_INVALID");
+        return;
+    }
+
     CTRL_SERIAL.printf("QR_BEGIN,%u,%u\n", static_cast<unsigned>(qrCodeData.payloadLen),
                        qrCodeData.valid ? 1u : 0u);
     CTRL_SERIAL.write(qrCodeData.payload, qrCodeData.payloadLen);
-    CTRL_SERIAL.println("\nQR_END");
+    CTRL_SERIAL.println();
+    CTRL_SERIAL.println("QR_END");
+    sendStatus("OK", "QR");
+}
 
-    if (qrCodeData.valid)
-    {
-        sendStatus("OK", "QR");
-    }
-    else
-    {
-        sendStatus("ERROR", "QR_INVALID");
-    }
+void sendLog(const char *level, const char *detail)
+{
+    CTRL_SERIAL.printf("LOG,%s,%s\n", level, detail);
 }
 
 void handleCommand(const String &command)

@@ -65,6 +65,22 @@ class Settings:
         return os.getenv("SENDGRID_FROM_NAME", "Museo de Historia Natural - Unicauca")
 
     @property
+    def bold_api_key(self) -> str | None:
+        return os.getenv("BOLD_API_KEY") or None
+
+    @property
+    def bold_secret_key(self) -> str | None:
+        return os.getenv("BOLD_SECRET_KEY") or None
+
+    @property
+    def bold_api_url(self) -> str:
+        return os.getenv("BOLD_API_URL", "https://payments.api.bold.co/v2").rstrip("/")
+
+    @property
+    def frontend_app_url(self) -> str:
+        return os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+
+    @property
     def qr_signing_secret(self) -> str:
         return os.getenv("QR_SIGNING_SECRET") or self.bold_secret_key or "crowdless-dev-qr-secret"
 

@@ -28,7 +28,7 @@ static const int CAM_TX_PIN = 17;
 #endif
 
 #ifndef BACKEND_BASE_URL
-#define BACKEND_BASE_URL "http://192.168.1.100:8000/api/v1"
+#define BACKEND_BASE_URL "http://192.168.0.124:8000/api/v1"
 #endif
 
 static const char *CMD_CAPTURE_QR = "CAPTURE_QR";
@@ -38,6 +38,8 @@ static const char *CMD_PING = "PING";
 static const unsigned long LINE_TIMEOUT_MS = 5000;
 static const unsigned long QR_SCAN_TIMEOUT_MS = 15000;
 static const unsigned long DOC_CAPTURE_TIMEOUT_MS = 20000;
+static const uint16_t BACKEND_CONNECT_TIMEOUT_MS = 5000;
+static const uint16_t BACKEND_RESPONSE_TIMEOUT_MS = 20000;
 
 static const uint16_t TFT_HOR_RES = 320;
 static const uint16_t TFT_VER_RES = 240;
@@ -55,7 +57,8 @@ static const int TOUCH_RAW_Y_MIN = 240;
 static const int TOUCH_RAW_Y_MAX = 3800;
 
 static TFT_eSPI tft = TFT_eSPI();
-static SPIClass touchSpi = SPIClass(VSPI);
+// Keep touch on a dedicated SPI controller to avoid colliding with TFT_eSPI VSPI state.
+static SPIClass touchSpi = SPIClass(HSPI);
 static XPT2046_Touchscreen touch(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 static lv_display_t *gDisplay = nullptr;
 static unsigned long gLastLvTickMs = 0;
@@ -199,13 +202,15 @@ void touchReadCallback(lv_indev_t *indev, lv_indev_data_t *data)
     static uint16_t lastX = 0;
     static uint16_t lastY = 0;
 
-    const bool isTouched = touch.tirqTouched() && touch.touched();
+    // Some XPT2046 breakout boards do not route T_IRQ reliably; polling touched() is safer.
+    const bool isTouched = touch.touched();
 
     if (isTouched)
     {
         const TS_Point p = touch.getPoint();
-        const long mappedX = map(p.x, TOUCH_RAW_X_MIN, TOUCH_RAW_X_MAX, 0, TFT_HOR_RES - 1);
-        const long mappedY = map(p.y, TOUCH_RAW_Y_MIN, TOUCH_RAW_Y_MAX, 0, TFT_VER_RES - 1);
+        // Touch controller orientation is 180 deg relative to display in this wiring.
+        const long mappedX = map(p.x, TOUCH_RAW_X_MIN, TOUCH_RAW_X_MAX, TFT_HOR_RES - 1, 0);
+        const long mappedY = map(p.y, TOUCH_RAW_Y_MIN, TOUCH_RAW_Y_MAX, TFT_VER_RES - 1, 0);
 
         lastX = static_cast<uint16_t>(constrain(mappedX, 0L, static_cast<long>(TFT_HOR_RES - 1)));
         lastY = static_cast<uint16_t>(constrain(mappedY, 0L, static_cast<long>(TFT_VER_RES - 1)));
@@ -404,11 +409,21 @@ bool verifyQrWithBackend(const String &qrPayload)
     const String url = String(BACKEND_BASE_URL) + "/validation/qr";
 
     http.begin(url);
+    http.setConnectTimeout(BACKEND_CONNECT_TIMEOUT_MS);
+    http.setTimeout(BACKEND_RESPONSE_TIMEOUT_MS);
     http.addHeader("Content-Type", "application/json");
 
     const String body = String("{\"qr_payload\":\"") + escapeJsonString(qrPayload) + "\"}";
     const int statusCode = http.POST(body);
-    const String response = http.getString();
+    String response;
+    if (statusCode > 0)
+    {
+        response = http.getString();
+    }
+    else
+    {
+        response = HTTPClient::errorToString(statusCode);
+    }
     http.end();
 
     CONSOLE_SERIAL.printf("Backend status: %d\n", statusCode);
