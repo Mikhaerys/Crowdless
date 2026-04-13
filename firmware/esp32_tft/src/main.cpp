@@ -6,6 +6,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <cstring>
 #include <lvgl.h>
+#include <esp_heap_caps.h>
 
 #include "app_bridge.h"
 #include "screens.h"
@@ -76,6 +77,7 @@ bool readExactBytesFromCam(size_t length, String &output, unsigned long timeoutM
 bool discardExactBytesFromCam(size_t length, unsigned long timeoutMs);
 String escapeJsonString(const String &value);
 bool verifyQrWithBackend(const String &qrPayload);
+bool verifyIdDocumentWithBackend(uint8_t *imageBuffer, size_t imageLength);
 bool captureQrFlow();
 bool captureDocumentFlow();
 void handleConsoleCommand(const String &command);
@@ -398,6 +400,39 @@ String escapeJsonString(const String &value)
     return escaped;
 }
 
+bool verifyIdDocumentWithBackend(uint8_t *imageBuffer, size_t imageLength)
+{
+    if (!connectWifi())
+    {
+        return false;
+    }
+
+    HTTPClient http;
+    const String url = String(BACKEND_BASE_URL) + "/validation/id-card";
+
+    http.begin(url);
+    http.setConnectTimeout(BACKEND_CONNECT_TIMEOUT_MS);
+    http.setTimeout(BACKEND_RESPONSE_TIMEOUT_MS);
+    http.addHeader("Content-Type", "image/jpeg");
+
+    const int statusCode = http.POST(imageBuffer, imageLength);
+    String response;
+    if (statusCode > 0)
+    {
+        response = http.getString();
+    }
+    else
+    {
+        response = HTTPClient::errorToString(statusCode);
+    }
+    http.end();
+
+    CONSOLE_SERIAL.printf("Backend ID status: %d\n", statusCode);
+    CONSOLE_SERIAL.println(response);
+
+    return (statusCode >= 200 && statusCode < 300) && (response.indexOf("\"valid\":true") >= 0);
+}
+
 bool verifyQrWithBackend(const String &qrPayload)
 {
     if (!connectWifi())
@@ -654,10 +689,69 @@ bool captureDocumentFlow()
     CONSOLE_SERIAL.printf("Imagen %s: %u bytes, %dx%d, fmt=%d\n", typeLabel.c_str(),
                           static_cast<unsigned>(imageLength), width, height, format);
 
-    if (!discardExactBytesFromCam(imageLength, DOC_CAPTURE_TIMEOUT_MS))
+    bool isValidId = false;
+    uint8_t *buffer = (uint8_t *)heap_caps_malloc(imageLength, MALLOC_CAP_SPIRAM);
+    if (!buffer)
     {
-        CONSOLE_SERIAL.println("Timeout recibiendo bytes de imagen");
-        return false;
+        buffer = (uint8_t *)malloc(imageLength);
+    }
+
+    if (buffer)
+    {
+        size_t remaining = imageLength;
+        uint8_t *ptr = buffer;
+        const unsigned long startRead = millis();
+
+        while (remaining > 0 && millis() - startRead < DOC_CAPTURE_TIMEOUT_MS)
+        {
+            size_t availableBytes = CAM_SERIAL.available();
+            if (availableBytes == 0)
+            {
+                delay(1);
+                pumpUi();
+                continue;
+            }
+
+            size_t toRead = availableBytes;
+            if (toRead > remaining)
+            {
+                toRead = remaining;
+            }
+
+            const size_t bytesRead = CAM_SERIAL.readBytes(ptr, toRead);
+            if (bytesRead > 0)
+            {
+                ptr += bytesRead;
+                remaining -= bytesRead;
+            }
+            else
+            {
+                delay(1);
+                pumpUi();
+            }
+        }
+
+        if (remaining == 0)
+        {
+            isValidId = verifyIdDocumentWithBackend(buffer, imageLength);
+        }
+        else
+        {
+            CONSOLE_SERIAL.println("Timeout recibiendo bytes de imagen");
+            free(buffer);
+            return false;
+        }
+
+        free(buffer);
+    }
+    else
+    {
+        CONSOLE_SERIAL.println("Advertencia: No hay memoria suficiente para la imagen, descartando");
+        if (!discardExactBytesFromCam(imageLength, DOC_CAPTURE_TIMEOUT_MS))
+        {
+            CONSOLE_SERIAL.println("Timeout descartando bytes de imagen");
+            return false;
+        }
     }
 
     bool imgEndFound = false;
@@ -689,7 +783,7 @@ bool captureDocumentFlow()
     }
 
     CONSOLE_SERIAL.println("Captura de documento completada");
-    return true;
+    return isValidId;
 }
 
 extern "C" bool app_capture_qr_and_validate()

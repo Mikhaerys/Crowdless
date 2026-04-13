@@ -84,5 +84,17 @@ class Settings:
     def qr_signing_secret(self) -> str:
         return os.getenv("QR_SIGNING_SECRET") or self.bold_secret_key or "crowdless-dev-qr-secret"
 
+    # ── Roboflow ────────────────────────────────────────────
+    @property
+    def roboflow_api_url(self) -> str:
+        return os.getenv(
+            "ROBOFLOW_API_URL",
+            "https://detect.roboflow.com/infer/workflows/miguels-workspace-0bd3f/detect-count-and-visualize"
+        )
+
+    @property
+    def roboflow_api_key(self) -> str:
+        return os.getenv("ROBOFLOW_API_KEY", "")
+
 
 settings = Settings()
