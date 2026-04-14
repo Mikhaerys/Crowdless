@@ -4,10 +4,12 @@ import hashlib
 import hmac
 import json
 import secrets
+from datetime import date
 
 from fastapi import HTTPException, status
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
+from python_http_client.exceptions import HTTPError
 
 from app.core.config import settings
 from app.models.booking import VisitorRegistrationRequest
@@ -20,6 +22,15 @@ from app.utils.qr_generator import generate_qr_code_base64
 class TicketService:
     def __init__(self, firestore_service: FirestoreService) -> None:
         self.firestore = firestore_service
+
+    def _calculate_age(self, birth_date: date, visit_date: date) -> int:
+        return visit_date.year - birth_date.year - (
+            (visit_date.month, visit_date.day) < (
+                birth_date.month, birth_date.day)
+        )
+
+    def _infer_ticket_type(self, birth_date: date, visit_date: date) -> str:
+        return "adult" if self._calculate_age(birth_date, visit_date) >= 18 else "child"
 
     def _sign_qr_payload(self, ticket_id: str, nonce: str) -> str:
         message = f"{ticket_id}:{nonce}".encode("utf-8")
@@ -90,7 +101,10 @@ class TicketService:
             )
 
         booking = booking_snapshot.to_dict()
+        visit_date = date.fromisoformat(booking["visit_date"])
         total_tickets = int(booking["total_tickets"])
+        expected_adults = int(booking["adults"])
+        expected_children = int(booking["children"])
 
         if booking.get("payment_status") != "approved":
             raise HTTPException(
@@ -113,6 +127,9 @@ class TicketService:
                 detail="Visitor count must match the number of tickets",
             )
 
+        adult_visitors = 0
+        child_visitors = 0
+
         existing_visitors = list(
             self.firestore.visitors.where(
                 filter=FieldFilter("booking_id", "==", booking_id)
@@ -131,6 +148,22 @@ class TicketService:
         tickets: list[TicketResponse] = []
 
         for visitor in payload.visitors:
+            expected_ticket_type = self._infer_ticket_type(
+                visitor.birth_date, visit_date)
+            if visitor.ticket_type != expected_ticket_type:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Visitor {visitor.name} does not match the purchased ticket type: "
+                        f"expected {expected_ticket_type}, got {visitor.ticket_type}"
+                    ),
+                )
+
+            if visitor.ticket_type == "adult":
+                adult_visitors += 1
+            else:
+                child_visitors += 1
+
             visitor_reference = self.firestore.visitors.document()
             ticket_reference = self.firestore.tickets.document()
 
@@ -139,6 +172,7 @@ class TicketService:
                 "name": visitor.name,
                 "birth_date": visitor.birth_date.isoformat(),
                 "id_number": visitor.id_number,
+                "ticket_type": visitor.ticket_type,
                 "created_at": now,
             }
             qr_payload = self._build_qr_payload(ticket_reference.id)
@@ -146,6 +180,7 @@ class TicketService:
                 "booking_id": booking_id,
                 "visitor_id": visitor_reference.id,
                 "visitor_name": visitor.name,
+                "ticket_type": visitor.ticket_type,
                 "qr_code": generate_qr_code_base64(qr_payload),
                 "qr_payload": qr_payload,
                 "validated": False,
@@ -162,11 +197,21 @@ class TicketService:
                     booking_id=booking_id,
                     visitor_id=visitor_reference.id,
                     visitor_name=visitor.name,
+                    ticket_type=visitor.ticket_type,
                     qr_code=ticket_data["qr_code"],
                     qr_payload=qr_payload,
                     validated=False,
                     validated_at=None,
                 )
+            )
+
+        if adult_visitors != expected_adults or child_visitors != expected_children:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Visitor ages do not match the purchased ticket distribution: "
+                    f"expected {expected_adults} adult(s) and {expected_children} child(ren)"
+                ),
             )
 
         batch.update(
@@ -190,12 +235,13 @@ class TicketService:
                     {
                         "ticket_id": ticket.ticket_id,
                         "visitor_name": ticket.visitor_name,
+                        "ticket_type": ticket.ticket_type,
                         "qr_code": ticket.qr_code,
                     }
                     for ticket in tickets
                 ],
             )
-        except Exception as e:
+        except HTTPError as e:  # pyright: ignore[reportGeneralException]
             # Falla silenciosamente — tickets ya creados, QRs visibles en pantalla
             print(f"[email] Error al enviar email: {e}")
 
@@ -214,6 +260,7 @@ class TicketService:
                     booking_id=ticket["booking_id"],
                     visitor_id=ticket["visitor_id"],
                     visitor_name=ticket["visitor_name"],
+                    ticket_type=ticket.get("ticket_type", "adult"),
                     qr_code=ticket["qr_code"],
                     qr_payload=ticket["qr_payload"],
                     validated=bool(ticket["validated"]),
@@ -275,6 +322,7 @@ class TicketService:
             booking_id=ticket["booking_id"],
             visitor_id=ticket["visitor_id"],
             visitor_name=ticket["visitor_name"],
+            ticket_type=ticket.get("ticket_type", "adult"),
             validated=True,
             validated_at=ticket["validated_at"],
         )
@@ -333,12 +381,14 @@ class TicketService:
                             {
                                 "ticket_id": ticket_id,
                                 "visitor_name": ticket["visitor_name"],
+                                "ticket_type": ticket.get("ticket_type", "adult"),
                                 "qr_code": new_qr_code,
                             }
                         ],
                     )
                     print(f"[email] QR renovado enviado a {contact_email}")
-                except Exception as e:
+                # pyright: ignore[reportGeneralException]
+                except HTTPError as e:
                     print(f"[email] Error al reenviar email: {e}")
 
         return TicketResponse(
@@ -346,6 +396,7 @@ class TicketService:
             booking_id=ticket["booking_id"],
             visitor_id=ticket["visitor_id"],
             visitor_name=ticket["visitor_name"],
+            ticket_type=ticket.get("ticket_type", "adult"),
             qr_code=new_qr_code,
             qr_payload=new_payload,
             validated=bool(ticket["validated"]),

@@ -18,7 +18,7 @@ class EmailService:
         tickets: list[dict],
     ) -> None:
         tickets_html = "".join(
-            f"<li><strong>{t['visitor_name']}</strong> — ID: {t['ticket_id']}</li>"
+            f"<li><strong>{t['visitor_name']}</strong> ({t.get('ticket_type', 'adult')}) — ID: {t['ticket_id']}</li>"
             for t in tickets
         )
 
@@ -37,7 +37,8 @@ class EmailService:
         """
 
         message = Mail(
-            from_email=(settings.sendgrid_from_email, settings.sendgrid_from_name),
+            from_email=(settings.sendgrid_from_email,
+                        settings.sendgrid_from_name),
             to_emails=to_email,
             subject=f"Tus entradas · Museo de Historia Natural · {visit_date}",
             html_content=html_content,

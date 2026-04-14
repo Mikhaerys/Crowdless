@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -8,6 +9,7 @@ class TicketResponse(BaseModel):
     booking_id: str
     visitor_id: str
     visitor_name: str
+    ticket_type: Literal["adult", "child"]
     qr_code: str
     qr_payload: str
     validated: bool
@@ -19,6 +21,7 @@ class TicketValidationResponse(BaseModel):
     booking_id: str
     visitor_id: str
     visitor_name: str
+    ticket_type: Literal["adult", "child"]
     validated: bool
     validated_at: datetime
 

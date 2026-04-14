@@ -8,6 +8,7 @@ class VisitorCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     birth_date: date
     id_number: str = Field(min_length=3, max_length=40)
+    ticket_type: Literal["adult", "child"]
 
 
 class BookingCreate(BaseModel):
