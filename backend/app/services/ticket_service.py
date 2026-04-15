@@ -331,6 +331,9 @@ class TicketService:
         ticket_id = self._parse_qr_ticket_id(qr_payload)
         return self.validate_ticket(ticket_id)
 
+    def get_ticket_id_from_qr_payload(self, qr_payload: str) -> str:
+        return self._parse_qr_ticket_id(qr_payload)
+
     def renew_ticket_qr(self, ticket_id: str) -> TicketResponse:
         """
         Invalida el QR actual y genera uno nuevo.
