@@ -10,3 +10,5 @@ backend/secrets/
 node_modules/
 dist/
 .env
+
+temp/
