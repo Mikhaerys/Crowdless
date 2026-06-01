@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -12,3 +12,17 @@ class ReportSummaryResponse(BaseModel):
     payment_breakdown: dict[str, int] = Field(default_factory=dict)
     daily_bookings: dict[str, int] = Field(default_factory=dict)
     slot_ticket_distribution: dict[str, int] = Field(default_factory=dict)
+
+
+class AttendanceHistoryResponse(BaseModel):
+    ticket_id: str
+    booking_id: str
+    visitor_name: str
+    ticket_type: str
+    validated: bool
+    validated_at: datetime
+
+
+class CurrentVisitorsResponse(BaseModel):
+    current_visitors: int
+

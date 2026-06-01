@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
-from app.models.report import ReportSummaryResponse
+from app.models.report import ReportSummaryResponse, AttendanceHistoryResponse, CurrentVisitorsResponse
 from app.services.runtime import report_service
 
 
@@ -29,3 +29,15 @@ def export_bookings_csv(start_date: date = Query(...), end_date: date = Query(..
 def get_occupancy_chart(start_date: date = Query(...), end_date: date = Query(...)) -> Response:
     chart = report_service.get_occupancy_chart(start_date, end_date)
     return Response(content=chart, media_type="image/png")
+
+
+@router.get("/attendance-history", response_model=list[AttendanceHistoryResponse])
+def get_attendance_history(limit: int = Query(100)) -> list[AttendanceHistoryResponse]:
+    return report_service.get_attendance_history(limit)
+
+
+@router.get("/current-visitors", response_model=CurrentVisitorsResponse)
+def get_current_visitors() -> CurrentVisitorsResponse:
+    count = report_service.get_current_visitors()
+    return CurrentVisitorsResponse(current_visitors=count)
+

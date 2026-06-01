@@ -1,7 +1,7 @@
 from __future__ import annotations
 import matplotlib.pyplot as plt
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone, time
 from io import BytesIO
 
 import matplotlib
@@ -123,3 +123,69 @@ class ReportService:
         figure.savefig(buffer, format="png", bbox_inches="tight")
         plt.close(figure)
         return buffer.getvalue()
+
+    def get_attendance_history(self, limit: int = 100) -> list[dict]:
+        tickets_query = self.firestore.tickets.where(filter=FieldFilter("validated", "==", True))
+        tickets = []
+        for doc in tickets_query.stream():
+            ticket = doc.to_dict()
+            tickets.append(
+                {
+                    "ticket_id": doc.id,
+                    "booking_id": ticket["booking_id"],
+                    "visitor_name": ticket["visitor_name"],
+                    "ticket_type": ticket.get("ticket_type", "adult"),
+                    "validated": True,
+                    "validated_at": ticket["validated_at"],
+                }
+            )
+        # Sort in memory by validated_at descending
+        tickets.sort(
+            key=lambda t: t.get("validated_at") or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True
+        )
+        return tickets[:limit]
+
+    def get_current_visitors(self) -> int:
+        utc_now = self.firestore.now()
+        colombia_now = utc_now - timedelta(hours=5)
+        current_date_str = colombia_now.date().isoformat()
+        current_time_str = colombia_now.strftime("%H:%M")
+
+        # Get slots active right now
+        slots_query = self.firestore.time_slots.where(filter=FieldFilter("date", "==", current_date_str))
+        active_slot_ids = []
+        for doc in slots_query.stream():
+            slot = doc.to_dict()
+            start_time = slot.get("start_time", "")
+            end_time = slot.get("end_time", "")
+            if start_time <= current_time_str <= end_time:
+                active_slot_ids.append(doc.id)
+
+        if not active_slot_ids:
+            return 0
+
+        # Find bookings matching these slots
+        bookings_query = self.firestore.bookings.where(filter=FieldFilter("visit_date", "==", current_date_str))
+        booking_ids = []
+        for doc in bookings_query.stream():
+            booking = doc.to_dict()
+            if booking.get("slot_id") in active_slot_ids:
+                booking_ids.append(doc.id)
+
+        if not booking_ids:
+            return 0
+
+        # Count tickets for these bookings validated today
+        colombia_today_start = datetime.combine(colombia_now.date(), time.min)
+        utc_today_start = (colombia_today_start + timedelta(hours=5)).replace(tzinfo=timezone.utc)
+
+        tickets_query = self.firestore.tickets.where(filter=FieldFilter("validated_at", ">=", utc_today_start))
+        current_visitors = 0
+        for doc in tickets_query.stream():
+            ticket = doc.to_dict()
+            if ticket.get("booking_id") in booking_ids and ticket.get("validated", False):
+                current_visitors += 1
+
+        return current_visitors
+

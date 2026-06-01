@@ -458,3 +458,282 @@ h1 {
         align-items: center;
     }
 }
+
+/* ── Admin Dashboard Additions ───────────────────────────── */
+.admin-header {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.admin-tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.admin-tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.admin-tab-btn:hover {
+    color: var(--ink-strong);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.admin-tab-btn.active {
+    color: var(--brand);
+    border-bottom-color: var(--brand);
+    font-weight: 700;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.metric-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f6faf8 100%);
+    border: 1px solid #d1ded6;
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--brand);
+}
+
+.metric-card.ok::before {
+    background: var(--ok);
+}
+
+.metric-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    margin: 0 0 0.5rem;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--ink-strong);
+    margin: 0;
+    font-family: "Sora", sans-serif;
+}
+
+.realtime-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    background: #e6f7ef;
+    border: 1px solid #a3e0c1;
+    color: var(--ok);
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: 999px;
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--ok);
+    border-radius: 50%;
+    display: inline-block;
+    position: relative;
+}
+
+.pulse-dot::after {
+    content: '';
+    width: 100%;
+    height: 100%;
+    background-color: var(--ok);
+    border-radius: 50%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(2.8);
+        opacity: 0;
+    }
+}
+
+.admin-table-container {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.9rem;
+}
+
+.admin-table th {
+    background: #f1f6f3;
+    padding: 0.85rem 1rem;
+    font-weight: 700;
+    color: var(--ink-strong);
+    border-bottom: 1px solid var(--line);
+}
+
+.admin-table td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #eef2ef;
+    color: var(--ink-soft);
+}
+
+.admin-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+    background-color: #fafdfa;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 6px;
+    text-transform: uppercase;
+}
+
+.badge-adult {
+    background-color: #e2effd;
+    color: #1a73e8;
+}
+
+.badge-child {
+    background-color: #fdf2e2;
+    color: #b06000;
+}
+
+.badge-validated {
+    background-color: #e6f7ef;
+    color: var(--ok);
+}
+
+.date-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1.5rem;
+    background: #fbfdfc;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 1.1rem;
+}
+
+.date-filter-row .field {
+    flex: 1;
+    min-width: 180px;
+}
+
+/* SVG Chart Styles */
+.chart-container {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.chart-title {
+    font-family: "Sora", sans-serif;
+    font-size: 1.1rem;
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chart-bar {
+    fill: var(--brand);
+    rx: 4;
+    transition: fill 0.2s ease, opacity 0.2s ease;
+    cursor: pointer;
+}
+
+.chart-bar:hover {
+    fill: var(--brand-press);
+    opacity: 0.95;
+}
+
+.chart-bar-bg {
+    fill: #f1f3f4;
+    rx: 4;
+}
+
+.chart-text {
+    font-size: 10px;
+    fill: var(--ink-soft);
+    text-anchor: middle;
+}
+
+.chart-grid-line {
+    stroke: #f1f3f4;
+    stroke-width: 1;
+}
+
+.chart-axis-line {
+    stroke: var(--line);
+    stroke-width: 1;
+}
+
+.chart-tooltip {
+    background: #14231d;
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
