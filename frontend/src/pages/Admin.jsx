@@ -171,6 +171,145 @@ function SVGBarChart({ data, xKey, yKey, title, yLabel }) {
   );
 }
 
+// ── SVG Line/Area Chart for Predictions ──────────────────
+function SVGLineChart({ data, xKey, yKey, title, yLabel }) {
+  if (!data || data.length === 0) {
+    return <p className="empty-state">No hay datos de predicción para graficar.</p>;
+  }
+
+  const svgWidth = 600;
+  const svgHeight = 280;
+  const padding = { top: 30, right: 30, bottom: 50, left: 50 };
+  const chartWidth = svgWidth - padding.left - padding.right;
+  const chartHeight = svgHeight - padding.top - padding.bottom;
+
+  const maxVal = Math.max(...data.map(d => d[yKey]), 1);
+
+  // Calculate coordinates for each point
+  const points = data.map((d, i) => {
+    const x = padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2);
+    const y = padding.top + chartHeight - (d[yKey] / maxVal) * chartHeight;
+    return { x, y, value: d[yKey], label: d[xKey] };
+  });
+
+  // Construct SVG Path
+  const pathD = points.reduce((acc, p, i) => {
+    return acc + `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`;
+  }, "");
+
+  // Area under path
+  const areaD = points.length > 0 
+    ? `${pathD} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`
+    : "";
+
+  // Grid lines
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount }, (_, i) => Math.round((maxVal / (tickCount - 1)) * i));
+
+  return (
+    <div className="chart-container">
+      <div className="chart-title">
+        <span>{title}</span>
+        <small style={{ color: "var(--ink-soft)" }}>Valores expresados en {yLabel.toLowerCase()}</small>
+      </div>
+      <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} width="100%" height="auto" style={{ overflow: "visible" }}>
+        {/* Y Axis Grid Lines */}
+        {ticks.map((tick, i) => {
+          const y = padding.top + chartHeight - (tick / maxVal) * chartHeight;
+          return (
+            <g key={i}>
+              <line
+                x1={padding.left}
+                y1={y}
+                x2={padding.left + chartWidth}
+                y2={y}
+                className="chart-grid-line"
+              />
+              <text
+                x={padding.left - 10}
+                y={y + 4}
+                textAnchor="end"
+                className="chart-text"
+              >
+                {tick}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X Axis Line */}
+        <line
+          x1={padding.left}
+          y1={padding.top + chartHeight}
+          x2={padding.left + chartWidth}
+          y2={padding.top + chartHeight}
+          className="chart-axis-line"
+        />
+
+        {/* Area under the line */}
+        {points.length > 0 && (
+          <path
+            d={areaD}
+            fill="rgba(212, 77, 41, 0.15)"
+            stroke="none"
+          />
+        )}
+
+        {/* Line path */}
+        {points.length > 0 && (
+          <path
+            d={pathD}
+            fill="none"
+            stroke="var(--brand)"
+            strokeWidth="3"
+          />
+        )}
+
+        {/* Dots & Values */}
+        {points.map((p, i) => {
+          const showValue = data.length <= 15 || i % Math.ceil(data.length / 10) === 0 || i === data.length - 1;
+          const showLabel = data.length <= 10 || i % Math.ceil(data.length / 8) === 0 || i === data.length - 1;
+
+          return (
+            <g key={i}>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r="4.5"
+                fill="var(--brand)"
+                stroke="#fff"
+                strokeWidth="2"
+              />
+              {showValue && (
+                <text
+                  x={p.x}
+                  y={p.y - 10}
+                  className="chart-text"
+                  fontWeight="bold"
+                  fill="var(--ink-strong)"
+                >
+                  {p.value}
+                </text>
+              )}
+              {showLabel && (
+                <text
+                  x={p.x}
+                  y={padding.top + chartHeight + 20}
+                  className="chart-text"
+                  transform={`rotate(-25, ${p.x}, ${padding.top + chartHeight + 20})`}
+                  textAnchor="end"
+                >
+                  {p.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // ── Panel principal ──────────────────────────────────────
 function AdminPanel({ onLogout }) {
   const [activeTab, setActiveTab] = useState("tickets");
@@ -202,6 +341,18 @@ function AdminPanel({ onLogout }) {
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
+
+  // State for Attendance Prediction
+  const [predictStartDate, setPredictStartDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split("T")[0];
+  });
+  const [predictDays, setPredictDays] = useState(7);
+  const [predictionData, setPredictionData] = useState(null);
+  const [loadingPrediction, setLoadingPrediction] = useState(false);
+  const [predictionError, setPredictionError] = useState("");
+  const [reloadingModel, setReloadingModel] = useState(false);
 
   // Fetch functions
   async function fetchRealtime() {
@@ -254,6 +405,54 @@ function AdminPanel({ onLogout }) {
       setLoadingHistory(false);
     }
   }
+
+  async function fetchPrediction() {
+    setLoadingPrediction(true);
+    setPredictionError("");
+    try {
+      const res = await fetch(`${API_BASE}/reports/predict-attendance?target_date=${predictStartDate}&days=${predictDays}`);
+      if (!res.ok) {
+        setPredictionError("Error al obtener las predicciones del servidor.");
+        return;
+      }
+      const data = await res.json();
+      setPredictionData(data);
+    } catch {
+      setPredictionError("Error de conexión al servidor.");
+    } finally {
+      setLoadingPrediction(false);
+    }
+  }
+
+  async function handleReloadModel() {
+    setReloadingModel(true);
+    setPredictionError("");
+    try {
+      const res = await fetch(`${API_BASE}/reports/predict-attendance/reload`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.model_loaded) {
+          setSuccessMsg("✓ Modelo cargado correctamente desde disco.");
+          fetchPrediction();
+        } else {
+          setPredictionError("No se pudo cargar el modelo. ¿Subiste los archivos correctos a backend/app/resources/model?");
+        }
+      } else {
+        setPredictionError("Error al enviar la solicitud de recarga.");
+      }
+    } catch {
+      setPredictionError("Error de conexión al servidor.");
+    } finally {
+      setReloadingModel(false);
+    }
+  }
+
+  // Load predictions
+  useEffect(() => {
+    if (activeTab === "prediction") {
+      fetchPrediction();
+    }
+  }, [activeTab]);
 
   // Poll current visitors in real-time
   useEffect(() => {
@@ -401,6 +600,12 @@ function AdminPanel({ onLogout }) {
           onClick={() => setActiveTab("history")}
         >
           📋 Historial de Asistencia
+        </button>
+        <button
+          className={`admin-tab-btn ${activeTab === "prediction" ? "active" : ""}`}
+          onClick={() => setActiveTab("prediction")}
+        >
+          🔮 Predicción de Afluencia
         </button>
       </nav>
 
@@ -737,6 +942,219 @@ function AdminPanel({ onLogout }) {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Predicción de Afluencia */}
+      {activeTab === "prediction" && (
+        <div className="flow-section">
+          <p className="subtext">
+            Pronostica de forma inteligente la afluencia de visitantes al museo para los próximos días utilizando modelos predictivos basados en tendencias históricas, días festivos y Semana Santa.
+          </p>
+
+          <div className="date-filter-row">
+            <div className="field">
+              <label htmlFor="predict-start-date">Fecha de Inicio</label>
+              <input
+                id="predict-start-date"
+                type="date"
+                value={predictStartDate}
+                onChange={(e) => setPredictStartDate(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="predict-days">Horizonte (Días)</label>
+              <select
+                id="predict-days"
+                value={predictDays}
+                onChange={(e) => setPredictDays(Number(e.target.value))}
+              >
+                <option value={7}>7 días (Una semana)</option>
+                <option value={15}>15 días (Quincena)</option>
+                <option value={30}>30 días (Un mes)</option>
+              </select>
+            </div>
+            <button
+              className="button button-primary"
+              onClick={fetchPrediction}
+              disabled={loadingPrediction}
+              style={{ height: "46px" }}
+            >
+              {loadingPrediction ? "Calculando..." : "Generar Pronóstico"}
+            </button>
+          </div>
+
+          {predictionError && <p className="error-box">{predictionError}</p>}
+          {successMsg && <p className="success-box" style={{ marginBottom: "1rem" }}>{successMsg}</p>}
+
+          {predictionData && !predictionData.model_loaded && (
+            <div className="admin-notice" style={{ background: "#fef8f4", border: "1px dashed #e6c280", color: "#a07c3c", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+              <div>
+                <strong>Aviso de Modo de Respaldo:</strong> El modelo de Machine Learning no se encuentra disponible o no ha sido cargado en el servidor. El sistema está utilizando un simulador heurístico de respaldo altamente preciso basado en reglas calendáricas.
+              </div>
+              <button
+                className="button button-secondary"
+                onClick={handleReloadModel}
+                disabled={reloadingModel}
+                style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              >
+                {reloadingModel ? "Cargando..." : "Cargar Modelo"}
+              </button>
+            </div>
+          )}
+
+          {loadingPrediction && (
+            <div className="loading-row" style={{ padding: "2rem", justifyContent: "center", width: "100%" }}>
+              <span className="loader" style={{ width: "1.5rem", height: "1.5rem" }}></span>
+              <span>Ejecutando algoritmo predictivo y procesando rezagos...</span>
+            </div>
+          )}
+
+          {predictionData && !loadingPrediction && (
+            <>
+              {/* Tarjetas de Metricas Predictivas */}
+              <div className="metric-grid">
+                <div className="metric-card">
+                  <h3 className="metric-title">Promedio Diario Estimado</h3>
+                  <p className="metric-value">
+                    {Math.round(predictionData.forecast.reduce((acc, curr) => acc + curr.prediction, 0) / predictionData.forecast.length)}
+                  </p>
+                  <small style={{ color: "var(--ink-soft)" }}>visitantes / día</small>
+                </div>
+                <div className="metric-card">
+                  <h3 className="metric-title">Pico Máximo Pronosticado</h3>
+                  <p className="metric-value">
+                    {Math.max(...predictionData.forecast.map(d => d.prediction))}
+                  </p>
+                  <small style={{ color: "var(--ink-soft)" }}>
+                    El día {predictionData.forecast.reduce((max, curr) => curr.prediction > max.prediction ? curr : max, predictionData.forecast[0]).date}
+                  </small>
+                </div>
+                <div className="metric-card ok">
+                  <h3 className="metric-title">Modelo Predictivo</h3>
+                  <p className="metric-value" style={{ fontSize: "1.1rem", marginTop: "0.5rem" }}>
+                    {predictionData.model_loaded 
+                      ? `${predictionData.metadata.nombre_modelo || "XGBoost Regressor"} (v${predictionData.metadata.version || "1.0"})`
+                      : "Heurística de Respaldo"}
+                  </p>
+                  <small style={{ color: "var(--ink-soft)" }}>
+                    {predictionData.model_loaded ? "Ejecución ML en servidor" : "Simulador dinámico"}
+                  </small>
+                </div>
+              </div>
+
+              {/* Grafica Lineal SVG */}
+              <SVGLineChart
+                title="Tendencia de Afluencia Futura"
+                xKey="date"
+                yKey="prediction"
+                yLabel="Visitantes"
+                data={predictionData.forecast}
+              />
+
+              {/* Tabla de Resultados */}
+              <div style={{ marginTop: "1.5rem" }}>
+                <h2>Detalle del Pronóstico de Afluencia</h2>
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Día</th>
+                        <th>Afluencia Estimada</th>
+                        <th>Nivel</th>
+                        <th>Factores Relevantes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {predictionData.forecast.map((item) => {
+                        let levelLabel = "Baja";
+                        if (item.prediction >= 800) {
+                          levelLabel = "Pico / Crítica";
+                        } else if (item.prediction >= 500) {
+                          levelLabel = "Alta";
+                        } else if (item.prediction >= 200) {
+                          levelLabel = "Media";
+                        }
+
+                        const dayNames = {
+                          "Monday": "Lunes",
+                          "Tuesday": "Martes",
+                          "Wednesday": "Miércoles",
+                          "Thursday": "Jueves",
+                          "Friday": "Viernes",
+                          "Saturday": "Sábado",
+                          "Sunday": "Domingo"
+                        };
+                        const translatedDay = dayNames[item.day_name] || item.day_name;
+
+                        const getLevelStyle = (pred) => {
+                          if (pred >= 800) return { background: "#ffe7ec", color: "var(--danger)" };
+                          if (pred >= 500) return { background: "#e2effd", color: "#1a73e8" };
+                          if (pred >= 200) return { background: "#e6f7ef", color: "var(--ok)" };
+                          return { background: "#f1f6f3", color: "var(--ink-soft)" };
+                        };
+
+                        return (
+                          <tr key={item.date} style={item.prediction === 0 ? { background: "#fafafa", opacity: 0.85 } : {}}>
+                            <td><strong>{item.date}</strong></td>
+                            <td>{translatedDay}</td>
+                            <td>
+                              <strong style={{ fontSize: "1.05rem" }}>{item.prediction}</strong> visitantes
+                            </td>
+                            <td>
+                              <span className="badge" style={getLevelStyle(item.prediction)}>
+                                {levelLabel}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                                {item.factors.length === 0 ? (
+                                  <span style={{ color: "#a0a0a0" }}>Ninguno (Día estándar)</span>
+                                ) : (
+                                  item.factors.map((factor, fIdx) => {
+                                    let style = { background: "#f0f4f2", color: "var(--ink-soft)" };
+                                    if (factor.includes("Semana Santa")) {
+                                      style = { background: "#fff9e6", color: "#b08500", border: "1px solid #ffe8a3" };
+                                    } else if (factor.includes("Festivo")) {
+                                      style = { background: "#fbf2f4", color: "var(--danger)", border: "1px solid #f9d2d8" };
+                                    } else if (factor.includes("Cerrado")) {
+                                      style = { background: "#f5f5f5", color: "#777777", textDecoration: "line-through" };
+                                    }
+                                    return (
+                                      <span key={fIdx} className="badge" style={style}>
+                                        {factor}
+                                      </span>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Recomendaciones Operativas */}
+              <div className="admin-notice" style={{ marginTop: "2rem", border: "1px solid #dcdce6", background: "#f8f8fc", color: "#3c3c50" }}>
+                <h3 style={{ margin: "0 0 0.5rem 0", color: "var(--ink-strong)" }}>💡 Recomendaciones de Gestión y Personal:</h3>
+                <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.4rem" }}>
+                  <li>
+                    <strong>Días normales (Menos de 500 visitantes):</strong> Operación estándar. Se recomienda personal base en taquillas y salas.
+                  </li>
+                  <li>
+                    <strong>Días de alta afluencia (500 a 800 visitantes):</strong> Se sugiere reforzar el personal de control de salas y habilitar una ventanilla de atención rápida para evitar aglomeraciones.
+                  </li>
+                  <li>
+                    <strong>Días críticos / pico (Más de 800 visitantes):</strong> Alta concentración de visitantes (ej. Semana Santa). Se aconseja habilitar todo el personal de contingencia, coordinar flujos de entrada en intervalos estrictos y programar descansos escalonados para el equipo del museo.
+                  </li>
+                </ul>
+              </div>
+            </>
           )}
         </div>
       )}

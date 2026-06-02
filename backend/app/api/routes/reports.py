@@ -3,8 +3,8 @@ from datetime import date
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
-from app.models.report import ReportSummaryResponse, AttendanceHistoryResponse, CurrentVisitorsResponse
-from app.services.runtime import report_service
+from app.models.report import ReportSummaryResponse, AttendanceHistoryResponse, CurrentVisitorsResponse, PredictionResponse
+from app.services.runtime import report_service, prediction_service
 
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -40,4 +40,28 @@ def get_attendance_history(limit: int = Query(100)) -> list[AttendanceHistoryRes
 def get_current_visitors() -> CurrentVisitorsResponse:
     count = report_service.get_current_visitors()
     return CurrentVisitorsResponse(current_visitors=count)
+
+
+@router.get("/predict-attendance", response_model=PredictionResponse)
+def predict_attendance(
+    target_date: date = Query(...),
+    days: int = Query(7)
+) -> PredictionResponse:
+    forecast = prediction_service.forecast_range(target_date, days)
+    return PredictionResponse(
+        target_date=target_date,
+        days=days,
+        model_loaded=prediction_service.model_loaded,
+        metadata=prediction_service.metadata,
+        forecast=forecast
+    )
+
+
+@router.post("/predict-attendance/reload")
+def reload_prediction_model() -> dict[str, str | bool]:
+    success = prediction_service.reload_model()
+    return {
+        "status": "success" if success else "failed",
+        "model_loaded": success
+    }
 

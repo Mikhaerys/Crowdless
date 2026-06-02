@@ -26,3 +26,19 @@ class AttendanceHistoryResponse(BaseModel):
 class CurrentVisitorsResponse(BaseModel):
     current_visitors: int
 
+
+class PredictionItem(BaseModel):
+    date: date
+    day_name: str
+    prediction: int
+    factors: list[str]
+    is_holiday: bool
+
+
+class PredictionResponse(BaseModel):
+    target_date: date
+    days: int
+    model_loaded: bool
+    metadata: dict = Field(default_factory=dict)
+    forecast: list[PredictionItem]
+

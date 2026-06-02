@@ -1,0 +1,15 @@
+{
+  "nombre_modelo": "XGBoost",
+  "n_lags": 15,
+  "fecha_entrenamiento": "2026-05-05",
+  "periodo_train": "2020-01-16 → 2024-06-30",
+  "periodo_test": "2024-07-01 → 2024-12-31",
+  "metricas_test": {
+    "MAE": 93.9,
+    "RMSE": 149.47,
+    "R2": 0.6027
+  },
+  "n_features": 33,
+  "capacidad_max_museo": 1200,
+  "version": "1.0"
+}
