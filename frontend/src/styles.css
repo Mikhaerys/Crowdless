@@ -1048,4 +1048,54 @@ h1 {
 @keyframes scale-up {
     0% { transform: scale(0.5); opacity: 0; }
     100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Live ID Capture Camera Styles ────────────────────────── */
+.id-camera-container {
+    border: 2px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #000;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1.25rem;
+    aspect-ratio: 4/3;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.id-camera-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.id-camera-guide {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    height: 60%;
+    border: 3px dashed rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    z-index: 2;
+}
+
+.id-camera-guide::before {
+    content: 'UBIQUE LA CÉDULA AQUÍ';
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
 }

@@ -24,7 +24,11 @@ export default function GuardPanel() {
   const [idResult, setIdResult] = useState(null);
   const [scanAttempt, setScanAttempt] = useState(0);
 
+  const [isCapturingId, setIsCapturingId] = useState(false);
+  const [idStream, setIdStream] = useState(null);
+
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
 
   // Login handler
   async function handleLogin(e) {
@@ -61,7 +65,78 @@ export default function GuardPanel() {
     setIdLoading(false);
     setIdResult(null);
     setScanAttempt((prev) => prev + 1);
+
+    // Stop ID camera if active
+    if (idStream) {
+      idStream.getTracks().forEach((track) => track.stop());
+      setIdStream(null);
+    }
+    setIsCapturingId(false);
   }
+
+  // ID Camera functions
+  async function startIdCamera() {
+    setIsCapturingId(true);
+    setSelectedFile(null);
+    setImagePreview(null);
+    setIdResult(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      setIdStream(stream);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      console.error("Error accessing camera for ID capture", err);
+      setIsCapturingId(false);
+      alert("No se pudo acceder a la cámara. Por favor use la opción de subir archivo.");
+    }
+  }
+
+  function stopIdCamera() {
+    if (idStream) {
+      idStream.getTracks().forEach((track) => track.stop());
+      setIdStream(null);
+    }
+    setIsCapturingId(false);
+  }
+
+  function captureIdPhoto() {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg");
+      setImagePreview(dataUrl);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], "cedula.jpg", { type: "image/jpeg" });
+          setSelectedFile(file);
+        }
+      }, "image/jpeg", 0.9);
+    }
+
+    stopIdCamera();
+  }
+
+  // Cleanup ID camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (idStream) {
+        idStream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [idStream]);
 
   // QR Code Success handler
   async function handleQrSuccess(decodedText) {
@@ -366,46 +441,93 @@ export default function GuardPanel() {
                 Validando que sea un documento auténtico y comparando los datos OCR...
               </small>
             </div>
+          ) : isCapturingId ? (
+            <div className="flow-section">
+              <div className="id-camera-container">
+                <video ref={videoRef} autoPlay playsInline className="id-camera-video"></video>
+                <div className="id-camera-guide"></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <button className="button button-secondary" onClick={stopIdCamera}>
+                  ◀ Cancelar Cámara
+                </button>
+                <button 
+                  className="button button-primary" 
+                  onClick={captureIdPhoto}
+                  style={{ background: "var(--ok)" }}
+                >
+                  Capturar Foto 📸
+                </button>
+              </div>
+            </div>
           ) : (
             <>
-              <div 
-                className="camera-preview-box"
-                onClick={() => fileInputRef.current && fileInputRef.current.click()}
-              >
-                {imagePreview ? (
-                  <div>
-                    <p style={{ fontWeight: 700, margin: 0, color: "var(--ok)" }}>✓ Foto cargada</p>
-                    <img 
-                      src={imagePreview} 
-                      alt="Cédula capturada" 
-                      className="preview-thumbnail" 
-                    />
+              {imagePreview ? (
+                <div 
+                  className="camera-preview-box"
+                  style={{ borderStyle: "solid", borderColor: "var(--ok)", background: "#f1fcf7" }}
+                >
+                  <p style={{ fontWeight: 700, margin: 0, color: "var(--ok)" }}>✓ Foto del Documento Cargada</p>
+                  <img 
+                    src={imagePreview} 
+                    alt="Cédula cargada" 
+                    className="preview-thumbnail" 
+                  />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "0.5rem" }}>
+                    <button 
+                      className="button button-secondary"
+                      style={{ padding: "0.4rem 0.6rem", fontSize: "0.8rem" }}
+                      onClick={startIdCamera}
+                    >
+                      📸 Tomar Otra
+                    </button>
+                    <button 
+                      className="button button-secondary"
+                      style={{ padding: "0.4rem 0.6rem", fontSize: "0.8rem" }}
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    >
+                      📁 Subir Otra
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flow-section" style={{ marginBottom: "1.25rem" }}>
+                  <div className="camera-preview-box" style={{ marginBottom: "0.75rem" }}>
+                    <span style={{ fontSize: "2.5rem" }}>🪪</span>
+                    <p style={{ fontWeight: 700, margin: "0.5rem 0 0" }}>Cédula del Visitante</p>
                     <p style={{ fontSize: "0.85rem", color: "var(--ink-soft)", margin: 0 }}>
-                      Toca aquí para tomar otra foto
+                      Seleccione una opción para escanear el documento
                     </p>
                   </div>
-                ) : (
-                  <div>
-                    <span style={{ fontSize: "3rem" }}>📸</span>
-                    <p style={{ fontWeight: 700, margin: "0.5rem 0 0" }}>Tomar foto de la cédula</p>
-                    <p style={{ fontSize: "0.85rem", color: "var(--ink-soft)", margin: 0 }}>
-                      Use la cámara de su celular para capturar el frente del documento
-                    </p>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <button 
+                      className="button button-primary" 
+                      onClick={startIdCamera}
+                      style={{ background: "var(--ok)" }}
+                    >
+                      Tomar Foto 📸
+                    </button>
+                    <button 
+                      className="button button-secondary" 
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                    >
+                      Subir Archivo 📁
+                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Hidden file input */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 onChange={handleFileChange}
                 style={{ display: "none" }}
               />
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", borderTop: "1px solid var(--line)", paddingTop: "1.25rem", marginTop: "0.5rem" }}>
                 <button 
                   className="button button-secondary"
                   onClick={resetVerification}

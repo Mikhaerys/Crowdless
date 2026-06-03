@@ -239,6 +239,7 @@ async def validate_id_card(request: Request):
 
         # Ejecutar modelo vía HTTP POST
         payload = {
+            "api_key": settings.roboflow_api_key,
             "inputs": {
                 "image": {
                     "type": "base64",
@@ -249,7 +250,6 @@ async def validate_id_card(request: Request):
 
         response = requests.post(
             settings.roboflow_api_url,
-            params={"api_key": settings.roboflow_api_key},
             json=payload,
             timeout=25.0  # Límite de 55 segundos en la petición externa
         )
@@ -575,6 +575,7 @@ async def guard_verify_identity(request: Request):
 
         # Roboflow inference API
         payload = {
+            "api_key": settings.roboflow_api_key,
             "inputs": {
                 "image": {
                     "type": "base64",
@@ -585,7 +586,6 @@ async def guard_verify_identity(request: Request):
 
         response = requests.post(
             settings.roboflow_api_url,
-            params={"api_key": settings.roboflow_api_key},
             json=payload,
             timeout=25.0
         )
