@@ -6,6 +6,7 @@ import ConfirmationPage from "./pages/Confirmation";
 import HomePage from "./pages/Home";
 import PaymentPage from "./pages/Payment";
 import VisitorInfoPage from "./pages/VisitorInfo";
+import GuardPanel from "./pages/GuardPanel";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/visitantes" element={<VisitorInfoPage />} />
         <Route path="/confirmacion" element={<ConfirmationPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/vigilante" element={<GuardPanel />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
