@@ -254,20 +254,27 @@ async def validate_id_card(request: Request):
             timeout=25.0  # Límite de 55 segundos en la petición externa
         )
         response.raise_for_status()
-
-        result = [response.json()]
+        res_data = response.json()
         # Eliminar archivo temporal
         os.remove(tmp_path)
 
         # Determinar si existe una Cédula
         is_cedula = False
-        if isinstance(result, list) and len(result) > 0:
-            predictions = result[0].get(
-                "predictions", {}).get("predictions", [])
-            for pred in predictions:
-                if pred.get("class") == "Cedula" and pred.get("confidence", 0) >= _ID_CARD_CONFIDENCE_THRESHOLD:
-                    is_cedula = True
-                    break
+        if isinstance(res_data, dict) and "outputs" in res_data:
+            outputs = res_data["outputs"]
+            result_dict = outputs[0] if isinstance(outputs, list) and len(outputs) > 0 else {}
+        elif isinstance(res_data, list) and len(res_data) > 0:
+            result_dict = res_data[0]
+        elif isinstance(res_data, dict):
+            result_dict = res_data
+        else:
+            result_dict = {}
+
+        predictions = result_dict.get("predictions", {}).get("predictions", []) if isinstance(result_dict, dict) else []
+        for pred in predictions:
+            if pred.get("class") == "Cedula" and pred.get("confidence", 0) >= _ID_CARD_CONFIDENCE_THRESHOLD:
+                is_cedula = True
+                break
 
         if not is_cedula:
             return {
@@ -276,9 +283,7 @@ async def validate_id_card(request: Request):
                 "identity_match": None,
             }
 
-        ocr_text = ""
-        if isinstance(result[0], dict):
-            ocr_text = str(result[0].get("Text", "") or "")
+        ocr_text = str(result_dict.get("Text", "") or "") if isinstance(result_dict, dict) else ""
 
         ticket_id = _extract_ticket_id(request, form_data)
         if not ticket_id:
@@ -590,17 +595,26 @@ async def guard_verify_identity(request: Request):
             timeout=25.0
         )
         response.raise_for_status()
-        result = [response.json()]
+        res_data = response.json()
         os.remove(tmp_path)
 
         # Check if ID card detected
         is_cedula = False
-        if isinstance(result, list) and len(result) > 0:
-            predictions = result[0].get("predictions", {}).get("predictions", [])
-            for pred in predictions:
-                if pred.get("class") == "Cedula" and pred.get("confidence", 0) >= _ID_CARD_CONFIDENCE_THRESHOLD:
-                    is_cedula = True
-                    break
+        if isinstance(res_data, dict) and "outputs" in res_data:
+            outputs = res_data["outputs"]
+            result_dict = outputs[0] if isinstance(outputs, list) and len(outputs) > 0 else {}
+        elif isinstance(res_data, list) and len(res_data) > 0:
+            result_dict = res_data[0]
+        elif isinstance(res_data, dict):
+            result_dict = res_data
+        else:
+            result_dict = {}
+
+        predictions = result_dict.get("predictions", {}).get("predictions", []) if isinstance(result_dict, dict) else []
+        for pred in predictions:
+            if pred.get("class") == "Cedula" and pred.get("confidence", 0) >= _ID_CARD_CONFIDENCE_THRESHOLD:
+                is_cedula = True
+                break
 
         if not is_cedula:
             return {
@@ -610,9 +624,7 @@ async def guard_verify_identity(request: Request):
                 "identity_match": None,
             }
 
-        ocr_text = ""
-        if isinstance(result[0], dict):
-            ocr_text = str(result[0].get("Text", "") or "")
+        ocr_text = str(result_dict.get("Text", "") or "") if isinstance(result_dict, dict) else ""
 
         # Compare with ticket owner data
         ticket_owner = _load_ticket_owner(ticket_id)
