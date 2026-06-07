@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -51,7 +51,7 @@ class PaymentService:
             )
 
         currency = str(booking.get("currency") or "COP").upper()
-        order_id = f"{booking_id}-{int(datetime.utcnow().timestamp() * 1000)}"
+        order_id = f"{booking_id}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
         integrity_signature = self.generate_integrity_hash(
             order_id, amount, currency)
         redirection_url = f"{settings.frontend_app_url}/pago"

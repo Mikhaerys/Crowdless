@@ -4,18 +4,25 @@ import math
 import re
 import unicodedata
 
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, status, Request, Depends
 from pydantic import BaseModel
 from google.cloud.firestore_v1 import FieldFilter
 from google.cloud import firestore
-import tempfile
-import os
 import base64
 import requests
 
 from app.models.ticket import QRValidationRequest, TicketResponse, TicketValidationResponse
 from app.services.runtime import ticket_service
 from app.core.config import settings
+from app.core.auth import (
+    hash_password,
+    verify_credentials,
+    create_session,
+    require_admin,
+    require_guard_or_admin,
+    get_current_user_role,
+    update_password,
+)
 
 router = APIRouter(prefix="/validation", tags=["validation"])
 
@@ -228,14 +235,8 @@ async def validate_id_card(request: Request):
         if not contents:
             raise HTTPException(status_code=400, detail="Empty file contents")
 
-        # Guardar la imagen en un archivo temporal
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-
-        # Leer y codificar la imagen en base64
-        with open(tmp_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+        # Codificar la imagen directamente en memoria (Base64)
+        encoded_image = base64.b64encode(contents).decode("utf-8")
 
         # Ejecutar modelo vía HTTP POST
         payload = {
@@ -255,8 +256,6 @@ async def validate_id_card(request: Request):
         )
         response.raise_for_status()
         res_data = response.json()
-        # Eliminar archivo temporal
-        os.remove(tmp_path)
 
         # Determinar si existe una Cédula
         is_cedula = False
@@ -318,7 +317,7 @@ async def validate_id_card(request: Request):
 
 
 @router.post("/tickets/{ticket_id}", response_model=TicketValidationResponse)
-def validate_ticket(ticket_id: str) -> TicketValidationResponse:
+def validate_ticket(ticket_id: str, role: str = Depends(require_guard_or_admin)) -> TicketValidationResponse:
     """Valida un ticket en la entrada del museo. Solo puede usarse una vez."""
     return ticket_service.validate_ticket(ticket_id)
 
@@ -336,7 +335,7 @@ def validate_qr_payload(payload: QRValidationRequest) -> TicketValidationRespons
 
 
 @router.post("/tickets/{ticket_id}/renew", response_model=TicketResponse)
-def renew_ticket_qr(ticket_id: str) -> TicketResponse:
+def renew_ticket_qr(ticket_id: str, role: str = Depends(require_admin)) -> TicketResponse:
     """
     Renueva el QR de un ticket no validado.
     Usado por el museo cuando un visitante reporta pérdida o fraude.
@@ -350,6 +349,11 @@ def renew_ticket_qr(ticket_id: str) -> TicketResponse:
 class GuardLoginRequest(BaseModel):
     username: str
     password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 class GuardQRVerificationRequest(BaseModel):
@@ -372,16 +376,48 @@ class GuardQRVerificationResponse(BaseModel):
 
 @router.post("/guard/login")
 def guard_login(payload: GuardLoginRequest):
-    if payload.username == "guardia" and payload.password == "seguridad2026":
-        return {"success": True, "message": "Inicio de sesión exitoso"}
+    if verify_credentials("guard", payload.username, payload.password):
+        token = create_session("guard", payload.username)
+        return {"success": True, "token": token, "message": "Inicio de sesión exitoso"}
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Usuario o contraseña incorrectos",
     )
 
 
+@router.post("/admin/login")
+def admin_login(payload: GuardLoginRequest):
+    if verify_credentials("admin", payload.username, payload.password):
+        token = create_session("admin", payload.username)
+        return {"success": True, "token": token, "message": "Inicio de sesión exitoso"}
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Usuario o contraseña incorrectos",
+    )
+
+
+@router.post("/change-password")
+def change_password(payload: PasswordChangeRequest, role: str = Depends(get_current_user_role)):
+    # Verify old password
+    doc_ref = ticket_service.firestore.client.collection("credentials").document(role)
+    doc_snap = doc_ref.get()
+    if not doc_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credenciales no inicializadas en la base de datos"
+        )
+    creds = doc_snap.to_dict()
+    if creds.get("password_hash") != hash_password(payload.old_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta"
+        )
+    update_password(role, payload.new_password)
+    return {"success": True, "message": "Contraseña cambiada exitosamente"}
+
+
 @router.post("/guard/verify-qr", response_model=GuardQRVerificationResponse)
-def guard_verify_qr(payload: GuardQRVerificationRequest):
+def guard_verify_qr(payload: GuardQRVerificationRequest, role: str = Depends(require_guard_or_admin)):
     # Parse QR payload to get ticket_id
     try:
         ticket_id = ticket_service.get_ticket_id_from_qr_payload(payload.qr_payload)
@@ -539,7 +575,7 @@ def guard_verify_qr(payload: GuardQRVerificationRequest):
 
 
 @router.post("/guard/verify-identity")
-async def guard_verify_identity(request: Request):
+async def guard_verify_identity(request: Request, role: str = Depends(require_guard_or_admin)):
     """
     Valida la imagen de la cédula mediante Roboflow, compara los datos con los del visitante.
     Si coincide, marca el tiquete como validado (validated=True, validated_at=now) y confirma.
@@ -569,14 +605,8 @@ async def guard_verify_identity(request: Request):
                 status_code=400, detail="Falta el ticket_id para la verificación"
             )
 
-        # Temp file for image
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-
-        # Encode image to base64
-        with open(tmp_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+        # Encode image directly in memory (Base64)
+        encoded_image = base64.b64encode(contents).decode("utf-8")
 
         # Roboflow inference API
         payload = {
@@ -589,6 +619,7 @@ async def guard_verify_identity(request: Request):
             }
         }
 
+        # Send query to Roboflow
         response = requests.post(
             settings.roboflow_api_url,
             json=payload,
@@ -596,7 +627,6 @@ async def guard_verify_identity(request: Request):
         )
         response.raise_for_status()
         res_data = response.json()
-        os.remove(tmp_path)
 
         # Check if ID card detected
         is_cedula = False

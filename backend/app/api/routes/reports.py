@@ -1,13 +1,14 @@
 from datetime import date
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import Response
 
 from app.models.report import ReportSummaryResponse, AttendanceHistoryResponse, CurrentVisitorsResponse, PredictionResponse
 from app.services.runtime import report_service, prediction_service
+from app.core.auth import require_admin
 
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/summary", response_model=ReportSummaryResponse)

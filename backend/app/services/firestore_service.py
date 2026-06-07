@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from functools import cached_property
 from typing import Any
 
@@ -40,7 +40,7 @@ class FirestoreService:
         return self.client.collection("payments")
 
     def now(self) -> datetime:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc).replace(tzinfo=None)
 
     def normalize_value(self, value: Any) -> Any:
         if isinstance(value, datetime):

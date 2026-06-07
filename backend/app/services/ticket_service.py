@@ -94,136 +94,146 @@ class TicketService:
 
     def register_visitors(self, booking_id: str, payload: VisitorRegistrationRequest) -> list[TicketResponse]:
         booking_reference = self.firestore.bookings.document(booking_id)
-        booking_snapshot = booking_reference.get()
-        if not booking_snapshot.exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-            )
-
-        booking = booking_snapshot.to_dict()
-        visit_date = date.fromisoformat(booking["visit_date"])
-        total_tickets = int(booking["total_tickets"])
-        expected_adults = int(booking["adults"])
-        expected_children = int(booking["children"])
-
-        if booking.get("payment_status") != "approved":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Payment must be approved first",
-            )
-        if booking.get("reservation_status") != "reserved":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Booking is not active",
-            )
-        if booking.get("tickets_created", 0) > 0:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Visitors are already registered",
-            )
-        if len(payload.visitors) != total_tickets:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Visitor count must match the number of tickets",
-            )
-
-        adult_visitors = 0
-        child_visitors = 0
-
-        existing_visitors = list(
-            self.firestore.visitors.where(
-                filter=FieldFilter("booking_id", "==", booking_id)
-            )
-            .limit(1)
-            .stream()
-        )
-        if existing_visitors:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Visitors are already registered",
-            )
-
-        batch = self.firestore.client.batch()
+        transaction = self.firestore.client.transaction()
         now = self.firestore.now()
-        tickets: list[TicketResponse] = []
 
-        for visitor in payload.visitors:
-            expected_ticket_type = self._infer_ticket_type(
-                visitor.birth_date, visit_date)
-            if visitor.ticket_type != expected_ticket_type:
+        @firestore.transactional
+        def register(trans: firestore.Transaction):
+            booking_snapshot = booking_reference.get(transaction=trans)
+            if not booking_snapshot.exists:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+                )
+
+            booking = booking_snapshot.to_dict()
+            visit_date = date.fromisoformat(booking["visit_date"])
+            total_tickets = int(booking["total_tickets"])
+            expected_adults = int(booking["adults"])
+            expected_children = int(booking["children"])
+
+            if booking.get("payment_status") != "approved":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Payment must be approved first",
+                )
+            if booking.get("reservation_status") != "reserved":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Booking is not active",
+                )
+            if booking.get("tickets_created", 0) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Visitors are already registered",
+                )
+
+            existing_visitors = list(
+                self.firestore.visitors.where(
+                    filter=FieldFilter("booking_id", "==", booking_id)
+                )
+                .limit(1)
+                .stream(transaction=trans)
+            )
+            if existing_visitors:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Visitors are already registered",
+                )
+
+            if len(payload.visitors) != total_tickets:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Visitor count must match the number of tickets",
+                )
+
+            adult_visitors = 0
+            child_visitors = 0
+            tickets_to_create = []
+
+            for visitor in payload.visitors:
+                expected_ticket_type = self._infer_ticket_type(
+                    visitor.birth_date, visit_date)
+                if visitor.ticket_type != expected_ticket_type:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            f"Visitor {visitor.name} does not match the purchased ticket type: "
+                            f"expected {expected_ticket_type}, got {visitor.ticket_type}"
+                        ),
+                    )
+
+                if visitor.ticket_type == "adult":
+                    adult_visitors += 1
+                else:
+                    child_visitors += 1
+
+                visitor_reference = self.firestore.visitors.document()
+                ticket_reference = self.firestore.tickets.document()
+
+                visitor_data = {
+                    "booking_id": booking_id,
+                    "name": visitor.name,
+                    "birth_date": visitor.birth_date.isoformat(),
+                    "id_number": visitor.id_number,
+                    "ticket_type": visitor.ticket_type,
+                    "created_at": now,
+                }
+                qr_payload = self._build_qr_payload(ticket_reference.id)
+                ticket_data = {
+                    "booking_id": booking_id,
+                    "visitor_id": visitor_reference.id,
+                    "visitor_name": visitor.name,
+                    "ticket_type": visitor.ticket_type,
+                    "qr_code": generate_qr_code_base64(qr_payload),
+                    "qr_payload": qr_payload,
+                    "validated": False,
+                    "validated_at": None,
+                    "created_at": now,
+                }
+
+                tickets_to_create.append((visitor_reference, visitor_data, ticket_reference, ticket_data))
+
+            if adult_visitors != expected_adults or child_visitors != expected_children:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=(
-                        f"Visitor {visitor.name} does not match the purchased ticket type: "
-                        f"expected {expected_ticket_type}, got {visitor.ticket_type}"
+                        "Visitor ages do not match the purchased ticket distribution: "
+                        f"expected {expected_adults} adult(s) and {expected_children} child(ren)"
                     ),
                 )
 
-            if visitor.ticket_type == "adult":
-                adult_visitors += 1
-            else:
-                child_visitors += 1
+            for vis_ref, vis_data, tick_ref, tick_data in tickets_to_create:
+                trans.set(vis_ref, vis_data)
+                trans.set(tick_ref, tick_data)
 
-            visitor_reference = self.firestore.visitors.document()
-            ticket_reference = self.firestore.tickets.document()
+            trans.update(
+                booking_reference,
+                {
+                    "visitors_registered": len(payload.visitors),
+                    "tickets_created": len(payload.visitors),
+                    "contact_email": payload.contact_email,
+                    "updated_at": now,
+                },
+            )
+            return tickets_to_create, booking
 
-            visitor_data = {
-                "booking_id": booking_id,
-                "name": visitor.name,
-                "birth_date": visitor.birth_date.isoformat(),
-                "id_number": visitor.id_number,
-                "ticket_type": visitor.ticket_type,
-                "created_at": now,
-            }
-            qr_payload = self._build_qr_payload(ticket_reference.id)
-            ticket_data = {
-                "booking_id": booking_id,
-                "visitor_id": visitor_reference.id,
-                "visitor_name": visitor.name,
-                "ticket_type": visitor.ticket_type,
-                "qr_code": generate_qr_code_base64(qr_payload),
-                "qr_payload": qr_payload,
-                "validated": False,
-                "validated_at": None,
-                "created_at": now,
-            }
+        tickets_to_create, booking = register(transaction)
 
-            batch.set(visitor_reference, visitor_data)
-            batch.set(ticket_reference, ticket_data)
-
+        tickets: list[TicketResponse] = []
+        for _, _, tick_ref, tick_data in tickets_to_create:
             tickets.append(
                 TicketResponse(
-                    ticket_id=ticket_reference.id,
+                    ticket_id=tick_ref.id,
                     booking_id=booking_id,
-                    visitor_id=visitor_reference.id,
-                    visitor_name=visitor.name,
-                    ticket_type=visitor.ticket_type,
-                    qr_code=ticket_data["qr_code"],
-                    qr_payload=qr_payload,
+                    visitor_id=tick_data["visitor_id"],
+                    visitor_name=tick_data["visitor_name"],
+                    ticket_type=tick_data["ticket_type"],
+                    qr_code=tick_data["qr_code"],
+                    qr_payload=tick_data["qr_payload"],
                     validated=False,
                     validated_at=None,
                 )
             )
-
-        if adult_visitors != expected_adults or child_visitors != expected_children:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "Visitor ages do not match the purchased ticket distribution: "
-                    f"expected {expected_adults} adult(s) and {expected_children} child(ren)"
-                ),
-            )
-
-        batch.update(
-            booking_reference,
-            {
-                "visitors_registered": len(payload.visitors),
-                "tickets_created": len(payload.visitors),
-                "contact_email": payload.contact_email,
-                "updated_at": now,
-            },
-        )
-        batch.commit()
 
         # ── Enviar email con todos los QRs ───────────────────
         try:
@@ -233,12 +243,12 @@ class TicketService:
                 visit_date=booking["visit_date"],
                 tickets=[
                     {
-                        "ticket_id": ticket.ticket_id,
-                        "visitor_name": ticket.visitor_name,
-                        "ticket_type": ticket.ticket_type,
-                        "qr_code": ticket.qr_code,
+                        "ticket_id": t.ticket_id,
+                        "visitor_name": t.visitor_name,
+                        "ticket_type": t.ticket_type,
+                        "qr_code": t.qr_code,
                     }
-                    for ticket in tickets
+                    for t in tickets
                 ],
             )
         except HTTPError as e:  # pyright: ignore[reportGeneralException]

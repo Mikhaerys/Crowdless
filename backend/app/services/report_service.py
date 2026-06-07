@@ -125,26 +125,54 @@ class ReportService:
         return buffer.getvalue()
 
     def get_attendance_history(self, limit: int = 100) -> list[dict]:
-        tickets_query = self.firestore.tickets.where(filter=FieldFilter("validated", "==", True))
-        tickets = []
-        for doc in tickets_query.stream():
-            ticket = doc.to_dict()
-            tickets.append(
-                {
-                    "ticket_id": doc.id,
-                    "booking_id": ticket["booking_id"],
-                    "visitor_name": ticket["visitor_name"],
-                    "ticket_type": ticket.get("ticket_type", "adult"),
-                    "validated": True,
-                    "validated_at": ticket["validated_at"],
-                }
+        try:
+            tickets_query = (
+                self.firestore.tickets.where(filter=FieldFilter("validated", "==", True))
+                .order_by("validated_at", direction=firestore.Query.DESCENDING)
+                .limit(limit)
             )
-        # Sort in memory by validated_at descending
-        tickets.sort(
-            key=lambda t: t.get("validated_at") or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True
-        )
-        return tickets[:limit]
+            tickets = []
+            for doc in tickets_query.stream():
+                ticket = doc.to_dict()
+                tickets.append(
+                    {
+                        "ticket_id": doc.id,
+                        "booking_id": ticket["booking_id"],
+                        "visitor_name": ticket["visitor_name"],
+                        "ticket_type": ticket.get("ticket_type", "adult"),
+                        "validated": True,
+                        "validated_at": ticket["validated_at"],
+                    }
+                )
+            return tickets
+        except Exception as exc:
+            # Fallback to in-memory sorting if Firestore index is not configured/created yet
+            print(f"[warning] Firestore query order_by failed, using in-memory sort fallback: {exc}")
+            tickets_query = self.firestore.tickets.where(filter=FieldFilter("validated", "==", True))
+            tickets = []
+            for doc in tickets_query.stream():
+                ticket = doc.to_dict()
+                tickets.append(
+                    {
+                        "ticket_id": doc.id,
+                        "booking_id": ticket["booking_id"],
+                        "visitor_name": ticket["visitor_name"],
+                        "ticket_type": ticket.get("ticket_type", "adult"),
+                        "validated": True,
+                        "validated_at": ticket["validated_at"],
+                    }
+                )
+            
+            def get_sort_key(t):
+                val = t.get("validated_at")
+                if val is None:
+                    return datetime.min
+                if hasattr(val, "tzinfo") and val.tzinfo is not None:
+                    return val.replace(tzinfo=None)
+                return val
+
+            tickets.sort(key=get_sort_key, reverse=True)
+            return tickets[:limit]
 
     def get_current_visitors(self) -> int:
         utc_now = self.firestore.now()
@@ -178,7 +206,8 @@ class ReportService:
 
         # Count tickets for these bookings validated today
         colombia_today_start = datetime.combine(colombia_now.date(), time.min)
-        utc_today_start = (colombia_today_start + timedelta(hours=5)).replace(tzinfo=timezone.utc)
+        # Keep naive comparison consistent with naive database datetime representation
+        utc_today_start = (colombia_today_start + timedelta(hours=5)).replace(tzinfo=None)
 
         tickets_query = self.firestore.tickets.where(filter=FieldFilter("validated_at", ">=", utc_today_start))
         current_visitors = 0
