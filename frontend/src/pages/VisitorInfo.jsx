@@ -25,6 +25,19 @@ function getTicketTypeLabel(ticketType) {
     return ticketType === "adult" ? "Adulto" : "Niño";
 }
 
+function calculateAge(birthDateString, visitDateString) {
+    const birthDate = new Date(birthDateString + "T00:00:00");
+    const visitDate = new Date(visitDateString + "T00:00:00");
+    
+    let age = visitDate.getFullYear() - birthDate.getFullYear();
+    const monthDiff = visitDate.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && visitDate.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age;
+}
+
 function VisitorInfoPage() {
     const navigate = useNavigate();
     const { state, setTickets } = useBookingContext();
@@ -82,6 +95,22 @@ function VisitorInfoPage() {
         ) {
             setError("Completa todos los campos de cada visitante.");
             return;
+        }
+
+        // Validar edades vs tipo de tiquete contratado
+        const visitDateStr = booking.visit_date;
+        for (let i = 0; i < visitors.length; i++) {
+            const visitor = visitors[i];
+            const age = calculateAge(visitor.birth_date, visitDateStr);
+            const expectedType = age >= 18 ? "adult" : "child";
+            if (visitor.ticket_type !== expectedType) {
+                const labelType = visitor.ticket_type === "adult" ? "Adulto" : "Niño";
+                const oppositeLabel = expectedType === "adult" ? "un adulto (18 años o más)" : "un niño (menor de 18 años)";
+                setError(
+                    `El visitante ${i + 1} (${visitor.name || "Sin nombre"}) tiene ${age} años, por lo que debe registrarse como ${oppositeLabel}. Su boleto actual es para ${labelType}.`
+                );
+                return;
+            }
         }
 
         setSaving(true);

@@ -1,23 +1,39 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch, API_BASE_URL } from "../services/apiClient";
 
-// Credenciales hardcodeadas para el proyecto académico
-const ADMIN_USER = "museo";
-const ADMIN_PASS = "unicauca2026";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+const API_BASE = API_BASE_URL;
 
 // ── Login ────────────────────────────────────────────────
 function LoginForm({ onLogin }) {
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit() {
-    if (user === ADMIN_USER && pass === ADMIN_PASS) {
+  async function handleSubmit() {
+    if (!user.trim() || !pass.trim()) {
+      setError("Ingresa usuario y contraseña.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch("/validation/admin/login", {
+        method: "POST",
+        body: { username: user, password: pass }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Error de inicio de sesión");
+      }
+      localStorage.setItem("session_token", data.token);
+      localStorage.setItem("admin_logged_in", "true");
       onLogin();
-    } else {
-      setError("Usuario o contraseña incorrectos.");
+    } catch (err) {
+      setError(err.message || "Usuario o contraseña incorrectos.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -57,8 +73,8 @@ function LoginForm({ onLogin }) {
       </div>
 
       <div className="hero-actions">
-        <button className="button button-primary" onClick={handleSubmit}>
-          Ingresar
+        <button className="button button-primary" onClick={handleSubmit} disabled={loading}>
+          {loading ? "Ingresando..." : "Ingresar"}
         </button>
       </div>
     </section>
@@ -358,7 +374,7 @@ function AdminPanel({ onLogout }) {
   async function fetchRealtime() {
     setLoadingRealtime(true);
     try {
-      const res = await fetch(`${API_BASE}/reports/current-visitors`);
+      const res = await apiFetch(`/reports/current-visitors`);
       if (res.ok) {
         const data = await res.json();
         setCurrentVisitors(data.current_visitors);
@@ -374,7 +390,7 @@ function AdminPanel({ onLogout }) {
     setLoadingSummary(true);
     setSummaryError("");
     try {
-      const res = await fetch(`${API_BASE}/reports/summary?start_date=${startDate}&end_date=${endDate}`);
+      const res = await apiFetch(`/reports/summary?start_date=${startDate}&end_date=${endDate}`);
       if (!res.ok) {
         setSummaryError("Error al obtener las estadísticas.");
         return;
@@ -392,7 +408,7 @@ function AdminPanel({ onLogout }) {
     setLoadingHistory(true);
     setHistoryError("");
     try {
-      const res = await fetch(`${API_BASE}/reports/attendance-history?limit=50`);
+      const res = await apiFetch(`/reports/attendance-history?limit=50`);
       if (!res.ok) {
         setHistoryError("Error al obtener el historial de asistencia.");
         return;
@@ -410,7 +426,7 @@ function AdminPanel({ onLogout }) {
     setLoadingPrediction(true);
     setPredictionError("");
     try {
-      const res = await fetch(`${API_BASE}/reports/predict-attendance?target_date=${predictStartDate}&days=${predictDays}`);
+      const res = await apiFetch(`/reports/predict-attendance?target_date=${predictStartDate}&days=${predictDays}`);
       if (!res.ok) {
         setPredictionError("Error al obtener las predicciones del servidor.");
         return;
@@ -428,7 +444,7 @@ function AdminPanel({ onLogout }) {
     setReloadingModel(true);
     setPredictionError("");
     try {
-      const res = await fetch(`${API_BASE}/reports/predict-attendance/reload`, { method: "POST" });
+      const res = await apiFetch(`/reports/predict-attendance/reload`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         if (data.model_loaded) {
@@ -486,7 +502,7 @@ function AdminPanel({ onLogout }) {
     setSuccessMsg("");
 
     try {
-      const res = await fetch(`${API_BASE}/validation/tickets/${ticketId.trim()}`);
+      const res = await apiFetch(`/validation/tickets/${ticketId.trim()}`);
       if (res.status === 404) {
         setError("No se encontró ningún tiquete con ese ID.");
         return;
@@ -510,8 +526,8 @@ function AdminPanel({ onLogout }) {
     setSuccessMsg("");
 
     try {
-      const res = await fetch(
-        `${API_BASE}/validation/tickets/${ticketId.trim()}/renew`,
+      const res = await apiFetch(
+        `/validation/tickets/${ticketId.trim()}/renew`,
         { method: "POST" }
       );
 
@@ -606,6 +622,12 @@ function AdminPanel({ onLogout }) {
           onClick={() => setActiveTab("prediction")}
         >
           🔮 Predicción de Afluencia
+        </button>
+        <button
+          className={`admin-tab-btn ${activeTab === "security" ? "active" : ""}`}
+          onClick={() => setActiveTab("security")}
+        >
+          🔒 Seguridad
         </button>
       </nav>
 
@@ -1158,19 +1180,134 @@ function AdminPanel({ onLogout }) {
           )}
         </div>
       )}
+
+      {/* 6. Seguridad */}
+      {activeTab === "security" && (
+        <div className="flow-section" style={{ maxWidth: 460 }}>
+          <h2>Seguridad</h2>
+          <p className="subtext">
+            Actualiza la contraseña de acceso para el panel administrativo del museo.
+          </p>
+          <PasswordChangeForm />
+        </div>
+      )}
     </section>
+  );
+}
+
+// ── Formulario de Cambio de Contraseña ─────────────────────
+function PasswordChangeForm() {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function handlePasswordChange(e) {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setError("Todos los campos son obligatorios.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("La nueva contraseña y su confirmación no coinciden.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await apiFetch("/validation/change-password", {
+        method: "POST",
+        body: {
+          old_password: oldPassword,
+          new_password: newPassword,
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Error al cambiar la contraseña");
+      }
+      setSuccess("✓ Contraseña actualizada correctamente.");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setError(err.message || "Error al cambiar la contraseña.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handlePasswordChange} className="flow-section" style={{ marginTop: "1rem" }}>
+      {error && <p className="error-box">{error}</p>}
+      {success && <p className="success-box">{success}</p>}
+
+      <div className="field">
+        <label htmlFor="old-pass">Contraseña Actual</label>
+        <input
+          id="old-pass"
+          type="password"
+          value={oldPassword}
+          onChange={(e) => setOldPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="new-pass">Nueva Contraseña</label>
+        <input
+          id="new-pass"
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="confirm-pass">Confirmar Nueva Contraseña</label>
+        <input
+          id="confirm-pass"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <button type="submit" className="button button-primary" disabled={loading} style={{ width: "100%" }}>
+        {loading ? "Actualizando..." : "Cambiar Contraseña"}
+      </button>
+    </form>
   );
 }
 
 // ── Página principal ─────────────────────────────────────
 function AdminPage() {
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(() => {
+    return localStorage.getItem("admin_logged_in") === "true";
+  });
 
-  if (!authenticated) {
-    return <LoginForm onLogin={() => setAuthenticated(true)} />;
-  }
-
-  return <AdminPanel onLogout={() => setAuthenticated(false)} />;
+  return authenticated ? (
+    <AdminPanel
+      onLogout={() => {
+        setAuthenticated(false);
+        localStorage.removeItem("admin_logged_in");
+        localStorage.removeItem("session_token");
+      }}
+    />
+  ) : (
+    <LoginForm onLogin={() => setAuthenticated(true)} />
+  );
 }
 
 export default AdminPage;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
-import { apiClient, API_BASE_URL } from "../services/apiClient";
+import { apiClient, apiFetch, API_BASE_URL } from "../services/apiClient";
 
 export default function GuardPanel() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -42,6 +42,7 @@ export default function GuardPanel() {
       if (response.success) {
         setIsLoggedIn(true);
         localStorage.setItem("guard_logged_in", "true");
+        localStorage.setItem("session_token", response.token);
       }
     } catch (err) {
       setLoginError(err.message || "Credenciales incorrectas");
@@ -51,6 +52,7 @@ export default function GuardPanel() {
   function handleLogout() {
     setIsLoggedIn(false);
     localStorage.removeItem("guard_logged_in");
+    localStorage.removeItem("session_token");
     resetVerification();
   }
 
@@ -298,20 +300,38 @@ export default function GuardPanel() {
           <p className="eyebrow" style={{ margin: 0 }}>Vigilancia y Control</p>
           <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Verificación de Entrada</h1>
         </div>
-        <button className="button button-secondary" onClick={handleLogout} style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
-          Salir 🚪
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="button button-secondary" onClick={() => setPhase(phase === "change_password" ? "qr" : "change_password")} style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
+            {phase === "change_password" ? "Volver ◀" : "Contraseña 🔑"}
+          </button>
+          <button className="button button-secondary" onClick={handleLogout} style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
+            Salir 🚪
+          </button>
+        </div>
       </div>
 
       {/* Paso/Fase indicator */}
-      <div className="guard-step-indicator">
-        <div className={`guard-step ${phase === "qr" ? "active" : phase !== "qr" ? "completed" : ""}`}>
-          1. Escanear QR
+      {phase !== "change_password" && (
+        <div className="guard-step-indicator">
+          <div className={`guard-step ${phase === "qr" ? "active" : phase !== "qr" ? "completed" : ""}`}>
+            1. Escanear QR
+          </div>
+          <div className={`guard-step ${phase === "identity" ? "active" : phase === "success" ? "completed" : ""}`}>
+            2. Cédula y Roboflow
+          </div>
         </div>
-        <div className={`guard-step ${phase === "identity" ? "active" : phase === "success" ? "completed" : ""}`}>
-          2. Cédula y Roboflow
+      )}
+
+      {/* PHASE: CHANGE PASSWORD */}
+      {phase === "change_password" && (
+        <div className="flow-section" style={{ maxWidth: 460, margin: "0 auto" }}>
+          <h2>Cambiar Contraseña</h2>
+          <p className="subtext">
+            Actualiza la contraseña de acceso para el personal de vigilancia.
+          </p>
+          <PasswordChangeForm onPasswordChanged={() => setPhase("qr")} />
         </div>
-      </div>
+      )}
 
       {/* PHASE 1: QR CODE SCANNING */}
       {phase === "qr" && (
@@ -585,5 +605,104 @@ export default function GuardPanel() {
         </div>
       )}
     </section>
+  );
+}
+
+// ── Formulario de Cambio de Contraseña para Guardias ───────
+function PasswordChangeForm({ onPasswordChanged }) {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function handlePasswordChange(e) {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setError("Todos los campos son obligatorios.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("La nueva contraseña y su confirmación no coinciden.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await apiFetch("/validation/change-password", {
+        method: "POST",
+        body: {
+          old_password: oldPassword,
+          new_password: newPassword,
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Error al cambiar la contraseña");
+      }
+      setSuccess("✓ Contraseña actualizada correctamente.");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      if (onPasswordChanged) {
+        setTimeout(onPasswordChanged, 1500);
+      }
+    } catch (err) {
+      setError(err.message || "Error al cambiar la contraseña.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handlePasswordChange} className="flow-section" style={{ marginTop: "1rem" }}>
+      {error && <p className="error-box">{error}</p>}
+      {success && <p className="success-box">{success}</p>}
+
+      <div className="field">
+        <label htmlFor="guard-old-pass">Contraseña Actual</label>
+        <input
+          id="guard-old-pass"
+          type="password"
+          value={oldPassword}
+          onChange={(e) => setOldPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="guard-new-pass">Nueva Contraseña</label>
+        <input
+          id="guard-new-pass"
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="guard-confirm-pass">Confirmar Nueva Contraseña</label>
+        <input
+          id="guard-confirm-pass"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
+      </div>
+
+      <button type="submit" className="button button-primary" disabled={loading} style={{ width: "100%" }}>
+        {loading ? "Actualizando..." : "Cambiar Contraseña"}
+      </button>
+    </form>
   );
 }
