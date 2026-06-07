@@ -158,17 +158,14 @@ bool captureQrAndSend()
 
 bool captureDocumentAndSend()
 {
-    // Keep document capture in camera's current stable mode set by QR reader.
-    return captureAndSend("DOC", FRAMESIZE_QVGA, 0, true);
+    // Capture in VGA resolution with good JPEG quality (10) for OCR / Roboflow success
+    return captureAndSend("DOC", FRAMESIZE_VGA, 10, true);
 }
 
 bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQuality,
                     bool flashOn)
 {
     stopQrWorker();
-
-    (void)frameSize;
-    (void)jpegQuality;
 
     sensor_t *sensor = esp_camera_sensor_get();
     if (sensor == nullptr)
@@ -178,10 +175,21 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
         return false;
     }
 
+    // Save previous settings to restore after capture
+    framesize_t prevFrameSize = sensor->status.framesize;
+    int prevQuality = sensor->status.quality;
+
+    sensor->set_framesize(sensor, frameSize);
+    sensor->set_quality(sensor, jpegQuality);
+
     if (flashOn)
     {
         setFlash(true);
-        delay(120);
+        delay(150); // Slightly more delay to let exposure adjust
+    }
+    else
+    {
+        delay(100);
     }
 
     camera_fb_t *fb = esp_camera_fb_get();
@@ -194,6 +202,9 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
     if (fb == nullptr)
     {
         sendStatus("ERROR", "CAPTURE_FAILED");
+        // Restore settings before starting worker
+        sensor->set_framesize(sensor, prevFrameSize);
+        sensor->set_quality(sensor, prevQuality);
         startQrWorker();
         return false;
     }
@@ -215,6 +226,12 @@ bool captureAndSend(const char *typeLabel, framesize_t frameSize, int jpegQualit
 
     CTRL_SERIAL.println("IMG_END");
     esp_camera_fb_return(fb);
+
+    // Restore previous camera settings for QR scanning
+    sensor->set_framesize(sensor, prevFrameSize);
+    sensor->set_quality(sensor, prevQuality);
+    delay(50);
+
     startQrWorker();
 
     sendStatus("OK", typeLabel);
