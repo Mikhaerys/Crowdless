@@ -70,12 +70,15 @@ def get_current_user_role(authorization: str | None = Header(None)) -> str:
         )
     session = session_snap.to_dict()
     expires_at = session.get("expires_at")
-    now = ticket_service.firestore.now()
-    if expires_at and expires_at < now:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="La sesión ha expirado",
-        )
+    if expires_at:
+        if hasattr(expires_at, "tzinfo") and expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
+        now = ticket_service.firestore.now()
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="La sesión ha expirado",
+            )
     return session.get("role")
 
 def require_admin(role: str = Depends(get_current_user_role)) -> str:
